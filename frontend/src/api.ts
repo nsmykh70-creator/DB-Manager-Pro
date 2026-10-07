@@ -361,6 +361,11 @@ export interface BackupSchedule {
   enabled: boolean | number;
 }
 
+export interface BackupRun {
+  id: string; scheduleId: string; connId: string; file: string;
+  bytes: number; tables: number; ok: number | boolean; error: string | null; at: number;
+}
+
 export interface AppSettings {
   projectName: string;
   timezone: string;
@@ -369,6 +374,8 @@ export interface AppSettings {
   toastsEnabled: boolean;
   toastDuration: number;
   notificationsEnabled: boolean;
+  /** Время жизни JWT в минутах (5–43200, дефолт 720). Действует на новые входы. */
+  sessionTtlMin: number;
   /** Типы СУБД, показываемые в боковых панелях. Пустой массив или отсутствие
    * поля означают «все типы включены» — так ведёт себя и бэкенд. */
   enabledKinds?: DbKind[];
@@ -408,12 +415,29 @@ export const api = {
 
   // Auth
   login: (username: string, password: string) =>
-    request<{ token: string; user: PanelUser; mustChangePassword?: boolean }>('/auth/login', {
+    request<{ token: string; user: PanelUser; mustChangePassword?: boolean; need2fa?: boolean; tempToken?: string }>('/auth/login', {
       method: 'POST', body: JSON.stringify({ username, password }),
     }),
   /** true, пока хоть один пользователь сидит на дефолтном пароле: экран входа
    *  показывает подсказку admin/admin, после смены она исчезает сама. */
   authSetup: () => request<{ defaultCredentials: boolean }>('/auth/setup'),
+  twofaStatus: () => request<{ enabled: boolean }>('/auth/2fa/status'),
+  twofaSetup: (password: string) =>
+    request<{ secret: string; otpauthUrl: string }>('/auth/2fa/setup', {
+      method: 'POST', body: JSON.stringify({ password }),
+    }),
+  twofaEnable: (code: string) =>
+    request<{ ok: boolean }>('/auth/2fa/enable', {
+      method: 'POST', body: JSON.stringify({ code }),
+    }),
+  twofaDisable: (password: string) =>
+    request<{ ok: boolean }>('/auth/2fa/disable', {
+      method: 'POST', body: JSON.stringify({ password }),
+    }),
+  twofaVerify: (tempToken: string, code: string) =>
+    request<{ token: string; user: PanelUser }>('/auth/2fa/verify', {
+      method: 'POST', headers: { Authorization: `Bearer ${tempToken}` }, body: JSON.stringify({ code }),
+    }),
   logout: () => setAuthToken(null),
   me: () => request<{ user: PanelUser }>('/auth/me'),
   authUsers: () => request<PanelUser[]>('/auth/users'),
@@ -717,6 +741,31 @@ export const api = {
     request<{ ok: boolean }>(`/backups/schedules/${enc(scheduleId)}`, { method: 'DELETE' }),
   runBackup: (scheduleId: string) =>
     request<unknown>(`/backups/schedules/${enc(scheduleId)}/run`, { method: 'POST' }),
+  backupRuns: (scheduleId?: string, limit?: number) => {
+    const qs = new URLSearchParams();
+    if (scheduleId) qs.set('scheduleId', scheduleId);
+    if (limit) qs.set('limit', String(limit));
+    const q = qs.toString();
+    return request<BackupRun[]>(`/backups/runs${q ? '?' + q : ''}`);
+  },
+  restoreBackupRun: (runId: string) =>
+    request<{ ok: boolean; [k: string]: unknown }>(`/backups/runs/${enc(runId)}/restore`, { method: 'POST' }),
+  downloadBackupRun: async (runId: string, filename: string) => {
+    const r = await requestRaw(`/backups/runs/${enc(runId)}/download`);
+    if (!r.ok) {
+      const body = await r.json().catch(() => null);
+      throw new Error(body?.error || `API ${r.status}`);
+    }
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  },
 
   // Audit
   audit: (connId?: string, limit?: number) => {

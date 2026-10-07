@@ -46,6 +46,9 @@ export function openMeta(metaPath: string): Database.Database {
   // Флаг обязательной смены пароля (дефолтные admin/admin при первом входе)
   const userCols = db.prepare(`PRAGMA table_info(users)`).all() as { name: string }[];
   if (!userCols.some((c) => c.name === 'mustChange')) db.exec(`ALTER TABLE users ADD COLUMN mustChange INTEGER NOT NULL DEFAULT 0`);
+  // Двухфакторка: секрет TOTP и флаг включения (см. core/totp.ts)
+  if (!userCols.some((c) => c.name === 'totpSecret')) db.exec(`ALTER TABLE users ADD COLUMN totpSecret TEXT`);
+  if (!userCols.some((c) => c.name === 'totpEnabled')) db.exec(`ALTER TABLE users ADD COLUMN totpEnabled INTEGER NOT NULL DEFAULT 0`);
   return db;
 }
 

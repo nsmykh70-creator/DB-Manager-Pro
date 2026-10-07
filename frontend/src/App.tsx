@@ -29,6 +29,10 @@ export default function App() {
   const [authError, setAuthError] = useState('');
   const [loginBusy, setLoginBusy] = useState(false);
   const [defaultCreds, setDefaultCreds] = useState<boolean | null>(null);
+  const [need2faToken, setNeed2faToken] = useState<string | null>(null);
+  const [twofaCode, setTwofaCode] = useState('');
+  const [twofaError, setTwofaError] = useState('');
+  const [twofaBusy, setTwofaBusy] = useState(false);
   const [mustChange, setMustChange] = useState(false);
   const [forceName, setForceName] = useState('');
   const [forcePass, setForcePass] = useState('');
@@ -224,6 +228,15 @@ export default function App() {
     setAuthError('');
     try {
       const result = await api.login(loginUsername.trim(), loginPassword);
+      if (result.need2fa && result.tempToken) {
+        // Пароль верный, но включён второй фактор: полный токен выдадим
+        // только после кода. Частичный токен никуда не сохраняем.
+        setNeed2faToken(result.tempToken);
+        setTwofaCode('');
+        setTwofaError('');
+        setLoginPassword('');
+        return;
+      }
       setAuthToken(result.token);
       setUser(result.user);
       setLoginPassword('');
@@ -244,10 +257,34 @@ export default function App() {
     api.logout();
     setUser(null);
     setMustChange(false);
+    setNeed2faToken(null);
+    setTwofaCode('');
+    setTwofaError('');
     setLoginPassword('');
     setLoginError('');
     setAuthError('');
     setAuthState('login');
+  };
+
+  // Второй шаг входа: код из приложения-аутентификатора + временный токен.
+  const handleTwofaVerify = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (twofaBusy || !need2faToken) return;
+    setTwofaBusy(true);
+    setTwofaError('');
+    try {
+      const result = await api.twofaVerify(need2faToken, twofaCode.trim());
+      setAuthToken(result.token);
+      setUser(result.user);
+      setNeed2faToken(null);
+      setTwofaCode('');
+      setLoginUsername(result.user.username);
+      setAuthState('authenticated');
+    } catch (error) {
+      setTwofaError(error instanceof Error ? error.message : t('app.errorLogin'));
+    } finally {
+      setTwofaBusy(false);
+    }
   };
 
   // Принудительная смена заводских admin/admin: без неё дальше нельзя.
@@ -520,6 +557,48 @@ export default function App() {
 
   if (authState === 'login') {
     const error = loginError || authError;
+    // Второй шаг входа: пароль уже принят, ждём 6 цифр из приложения.
+    if (need2faToken) {
+      return (
+        <div className="min-h-screen w-full flex items-center justify-center bg-gray-50 dark:bg-[#151923] px-4 py-10 text-gray-900 dark:text-gray-100">
+          <div className="w-full max-w-sm rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-[#1e2330] shadow-xl p-8">
+            <div className="mb-8 text-center">
+              <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-blue-600 text-white text-xl font-bold">2F</div>
+              <h1 className="text-xl font-semibold">{t('app.twofaTitle')}</h1>
+              <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">{t('app.twofaHint')}</p>
+            </div>
+            <form onSubmit={handleTwofaVerify} className="space-y-4">
+              <label className="block text-sm font-medium">{t('app.twofaCode')}<input
+                  value={twofaCode}
+                  onChange={(event) => setTwofaCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  required
+                  autoFocus
+                  placeholder="123456"
+                  className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-[#151923] px-3 py-2 text-sm text-center tracking-[0.5em] outline-none focus:border-blue-500"
+                />
+              </label>
+              {twofaError && <p role="alert" className="rounded-lg bg-red-50 dark:bg-red-950/40 px-3 py-2 text-sm text-red-600 dark:text-red-400">{twofaError}</p>}
+              <button
+                type="submit"
+                disabled={twofaBusy}
+                className="w-full rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-60 px-3 py-2 text-sm font-medium text-white transition-colors"
+              >
+                {twofaBusy ? t('app.twofaChecking') : t('app.twofaVerify')}
+              </button>
+              <button
+                type="button"
+                onClick={() => { setNeed2faToken(null); setTwofaCode(''); setTwofaError(''); }}
+                className="w-full rounded-lg px-3 py-2 text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
+              >
+                {t('app.twofaBack')}
+              </button>
+            </form>
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="min-h-screen w-full flex items-center justify-center bg-gray-50 dark:bg-[#151923] px-4 py-10 text-gray-900 dark:text-gray-100">
         <div className="w-full max-w-sm rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-[#1e2330] shadow-xl p-8">

@@ -17,6 +17,9 @@ const defaults = {
   toastDuration: 5000,
   notificationsEnabled: true,
   enabledKinds: [...ALL_KINDS] as Kind[],
+  /** Время жизни JWT в минутах (было зашито 12 ч в коде). Действует на новые
+   *  входы; уже выданные токены живут до своего exp. */
+  sessionTtlMin: 720,
 };
 
 type Settings = typeof defaults;
@@ -32,6 +35,19 @@ function normalizeKinds(value: unknown): Kind[] {
     if ((ALL_KINDS as readonly string[]).includes(kind)) seen.add(kind);
   }
   return ALL_KINDS.filter(kind => seen.has(kind));
+}
+
+/** TTL сессии в минутах: целое 5…43200, иначе дефолт 720 (12 ч). */
+function normalizeTtl(value: unknown): number {
+  const n = Math.floor(Number(value));
+  if (!Number.isFinite(n) || n < 5 || n > 43200) return defaults.sessionTtlMin;
+  return n;
+}
+
+/** TTL для подписи JWT при входе. Читается из settings.json при каждом входе,
+ *  поэтому смена настройки действует сразу на новые токены. */
+export function readSessionTtlMin(cfg: AppConfig): number {
+  return readSettings(cfg).sessionTtlMin;
 }
 
 function settingsPath(cfg: AppConfig): string {
@@ -52,6 +68,7 @@ function readSettings(cfg: AppConfig): Settings {
       toastDuration: Number.isFinite(Number(value.toastDuration)) && Number(value.toastDuration) >= 0 ? Number(value.toastDuration) : defaults.toastDuration,
       notificationsEnabled: typeof value.notificationsEnabled === 'boolean' ? value.notificationsEnabled : defaults.notificationsEnabled,
       enabledKinds: normalizeKinds(value.enabledKinds),
+      sessionTtlMin: normalizeTtl(value.sessionTtlMin),
     };
   } catch {
     return { ...defaults };
@@ -75,6 +92,7 @@ export function settingsRoutes(app: FastifyInstance, cfg: AppConfig): void {
       toastDuration: Number.isFinite(Number(body.toastDuration)) && Number(body.toastDuration) >= 0 ? Math.min(Number(body.toastDuration), 3_600_000) : defaults.toastDuration,
       notificationsEnabled: typeof body.notificationsEnabled === 'boolean' ? body.notificationsEnabled : defaults.notificationsEnabled,
       enabledKinds: normalizeKinds(body.enabledKinds),
+      sessionTtlMin: normalizeTtl(body.sessionTtlMin),
     };
     writeFileSync(settingsPath(cfg), JSON.stringify(next, null, 2), 'utf8');
     return next;

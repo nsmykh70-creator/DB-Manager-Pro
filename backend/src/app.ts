@@ -4,7 +4,7 @@ import multipart from '@fastify/multipart';
 import rateLimit from '@fastify/rate-limit';
 import { loadConfig } from './core/config.js';
 import { openMeta } from './core/store.js';
-import { ensureAdmin, isCurrentUser, verifyToken } from './core/auth.js';
+import { ensureAdmin, isCurrentUser, verifyTokenPayload } from './core/auth.js';
 import { register } from './plugins/registry.js';
 import { mysqlDriver, mariadbDriver } from './drivers/mysql.js';
 import { pgDriver } from './drivers/postgres.js';
@@ -137,10 +137,17 @@ export async function buildApp() {
     const h = req.headers.authorization;
     if (h?.startsWith('Bearer ')) {
       try {
-        const user = verifyToken(h.slice(7), cfg.jwtSecret);
+        const payload = verifyTokenPayload(h.slice(7), cfg.jwtSecret);
+        // Промежуточный 2FA-токен живёт 5 минут и годится только на
+        // подтверждение кода — везде иначе это 401, а не доступ.
+        if (payload.scope === '2fa' && p !== '/api/auth/2fa/verify') {
+          throw Object.assign(new Error('Two-factor confirmation required'), { statusCode: 401 });
+        }
+        const user = { id: payload.sub, username: payload.username, role: payload.role };
         if (!isCurrentUser(cfg.metaPath, user)) throw Object.assign(new Error('User is no longer active'), { statusCode: 401 });
         (req as unknown as { user: unknown }).user = user;
-      } catch {
+      } catch (e: unknown) {
+        if (e instanceof Error && (e as { statusCode?: number }).statusCode === 401) throw e;
         throw Object.assign(new Error('Bad token'), { statusCode: 401 });
       }
     } else if (cfg.requireAuth) {

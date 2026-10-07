@@ -7,7 +7,12 @@ export { isWriteSql } from './sql-classifier.js';
 
 export type Role = 'admin' | 'editor' | 'readonly';
 export interface PanelUser { id: string; username: string; role: Role; }
-export interface JwtPayload { sub: string; username: string; role: Role; }
+export interface JwtPayload {
+  sub: string; username: string; role: Role;
+  /** Область токена: '2fa' — промежуточный (только подтверждение кода),
+   *  отсутствие поля — полный (старые токены тоже полные). */
+  scope?: '2fa';
+}
 
 export async function hashPass(pw: string): Promise<string> {
   return bcrypt.hash(pw, 10);
@@ -17,13 +22,26 @@ export async function verifyPass(pw: string, hash: string): Promise<boolean> {
   return bcrypt.compare(pw, hash);
 }
 
-export function signToken(u: PanelUser, secret: string): string {
-  return jwt.sign({ sub: u.id, username: u.username, role: u.role } as JwtPayload, secret, { expiresIn: '12h' });
+export function signToken(u: PanelUser, secret: string, ttlMin = 720): string {
+  const minutes = Number.isFinite(ttlMin) && ttlMin >= 5 && ttlMin <= 43200 ? Math.floor(ttlMin) : 720;
+  return jwt.sign({ sub: u.id, username: u.username, role: u.role } as JwtPayload, secret, { expiresIn: `${minutes}m` });
+}
+
+/** Короткий (5 мин) промежуточный токен второго шага 2FA. Полным не является:
+ *  auth-hook отбрасывает его везде, кроме /auth/2fa/verify. */
+export function signTempToken(u: PanelUser, secret: string): string {
+  return jwt.sign({ sub: u.id, username: u.username, role: u.role, scope: '2fa' } as JwtPayload, secret, { expiresIn: '5m' });
 }
 
 export function verifyToken(token: string, secret: string): PanelUser {
   const p = jwt.verify(token, secret) as JwtPayload;
   return { id: p.sub, username: p.username, role: p.role };
+}
+
+/** Полный пейлоад (нужен auth-hook: промежуточный 2FA-токен пускаем только
+ *  на подтверждение кода). */
+export function verifyTokenPayload(token: string, secret: string): JwtPayload {
+  return jwt.verify(token, secret) as JwtPayload;
 }
 
 export function isCurrentUser(metaPath: string, user: PanelUser): boolean {

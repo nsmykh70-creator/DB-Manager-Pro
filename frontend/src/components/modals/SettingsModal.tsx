@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { X, Save, Shield, HardDrive, Settings, User, Bell } from 'lucide-react';
-import { api, AppSettings, BackupSchedule, DbKind, PanelUser } from '../../api';
+import { api, AppSettings, BackupRun, BackupSchedule, DbKind, PanelUser } from '../../api';
+import { formatDateTime } from '../../intl';
 import { Theme } from '../../types';
 import { ALL_KINDS, kindLabel } from '../../engineKinds';
 
@@ -25,7 +26,7 @@ interface SettingsModalProps {
 }
 
 export function SettingsModal({ isOpen, onClose, addToast, initialTab = 'general', toastsEnabled, setToastsEnabled, toastDuration, setToastDuration, notificationsEnabled, setNotificationsEnabled, theme, setTheme, connId, activeDb, connKind, onSaved }: SettingsModalProps) {
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
   const [activeTab, setActiveTab] = useState(initialTab);
   const [users, setUsers] = useState<PanelUser[]>([]);
   const [usersLoading, setUsersLoading] = useState(false);
@@ -34,6 +35,8 @@ export function SettingsModal({ isOpen, onClose, addToast, initialTab = 'general
   const [backupSchedules, setBackupSchedules] = useState<BackupSchedule[]>([]);
   const [projectName, setProjectName] = useState('DB Manager Pro');
   const [timezone, setTimezone] = useState('UTC');
+  // Таймаут сессии в минутах: применяется сервером к новым входам.
+  const [sessionTtlMin, setSessionTtlMin] = useState(720);
   const [checkUpdates, setCheckUpdates] = useState(true);
   const [settingsLoading, setSettingsLoading] = useState(false);
   // Какие типы СУБД показывать в боковых панелях. Пустой массив означает «все»,
@@ -41,22 +44,116 @@ export function SettingsModal({ isOpen, onClose, addToast, initialTab = 'general
   const [enabledKinds, setEnabledKinds] = useState<DbKind[]>([...ALL_KINDS]);
   const [scheduleForm, setScheduleForm] = useState({ format: 'sql' as 'sql' | 'json', intervalMin: 1440, keepLast: 7 });
   const [scheduleBusy, setScheduleBusy] = useState(false);
+  // Последние копии по расписаниям: нужны кнопкам «Восстановить»/«Скачать».
+  const [backupRuns, setBackupRuns] = useState<Record<string, BackupRun[]>>({});
+  const [restoreBusy, setRestoreBusy] = useState<string | null>(null);
+  // Двухфакторка своего аккаунта: статус, секрет на подтверждении, пароль.
+  const [twofaEnabled, setTwofaEnabled] = useState<boolean | null>(null);
+  const [twofaStep, setTwofaStep] = useState<'idle' | 'confirm'>('idle');
+  const [twofaSecret, setTwofaSecret] = useState('');
+  const [twofaUrl, setTwofaUrl] = useState('');
+  const [twofaCode, setTwofaCode] = useState('');
+  const [twofaPassword, setTwofaPassword] = useState('');
+  const [twofaBusy, setTwofaBusy] = useState(false);
 
   const fetchBackups = React.useCallback(async () => {
     if (!connId) {
       setBackupSchedules([]);
+      setBackupRuns({});
       return;
     }
     try {
-      setBackupSchedules(await api.backupSchedules(connId));
+      const schedules = await api.backupSchedules(connId);
+      setBackupSchedules(schedules);
+      const runs = await Promise.all(schedules.map((s) => api.backupRuns(s.id, 3).catch(() => [] as BackupRun[])));
+      const bySchedule: Record<string, BackupRun[]> = {};
+      schedules.forEach((s, i) => { bySchedule[s.id] = runs[i]; });
+      setBackupRuns(bySchedule);
     } catch {
       setBackupSchedules([]);
+      setBackupRuns({});
     }
   }, [connId]);
 
   React.useEffect(() => {
     if (isOpen && activeTab === 'backup') fetchBackups();
   }, [activeTab, fetchBackups, isOpen]);
+
+  const fetchTwofa = React.useCallback(async () => {
+    try {
+      setTwofaEnabled((await api.twofaStatus()).enabled);
+    } catch {
+      setTwofaEnabled(null);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    if (isOpen && activeTab === 'security') {
+      setTwofaStep('idle');
+      setTwofaCode('');
+      setTwofaPassword('');
+      void fetchTwofa();
+    }
+  }, [activeTab, fetchTwofa, isOpen]);
+
+  const handleTwofaSetup = async () => {
+    if (!twofaPassword) { addToast(t('settings.twofaNeedPassword'), 'error'); return; }
+    setTwofaBusy(true);
+    try {
+      const r = await api.twofaSetup(twofaPassword);
+      setTwofaSecret(r.secret);
+      setTwofaUrl(r.otpauthUrl);
+      setTwofaStep('confirm');
+      setTwofaPassword('');
+    } catch (e: any) {
+      addToast(t('settings.errorTwofa') + e.message, 'error');
+    } finally {
+      setTwofaBusy(false);
+    }
+  };
+
+  const handleTwofaCopy = async () => {
+    const text = twofaUrl || twofaSecret;
+    try {
+      await navigator.clipboard.writeText(text);
+      addToast(t('settings.twofaCopied'), 'success');
+    } catch {
+      addToast(text, 'info');
+    }
+  };
+
+  const handleTwofaEnable = async () => {
+    setTwofaBusy(true);
+    try {
+      await api.twofaEnable(twofaCode.trim());
+      setTwofaStep('idle');
+      setTwofaCode('');
+      setTwofaSecret('');
+      setTwofaUrl('');
+      await fetchTwofa();
+      addToast(t('settings.twofaEnabledMsg'), 'success');
+    } catch (e: any) {
+      addToast(t('settings.errorTwofa') + e.message, 'error');
+    } finally {
+      setTwofaBusy(false);
+    }
+  };
+
+  const handleTwofaDisable = async () => {
+    if (!twofaPassword) { addToast(t('settings.twofaNeedPassword'), 'error'); return; }
+    if (!confirm(t('settings.twofaDisableConfirm'))) return;
+    setTwofaBusy(true);
+    try {
+      await api.twofaDisable(twofaPassword);
+      setTwofaPassword('');
+      await fetchTwofa();
+      addToast(t('settings.twofaDisabledMsg'), 'success');
+    } catch (e: any) {
+      addToast(t('settings.errorTwofa') + e.message, 'error');
+    } finally {
+      setTwofaBusy(false);
+    }
+  };
 
   const backupFormat: 'sql' | 'json' = connKind === 'mongodb' ? 'json' : 'sql';
   const selectedFormat: 'sql' | 'json' = connKind === 'mongodb' ? 'json' : scheduleForm.format;
@@ -126,6 +223,29 @@ export function SettingsModal({ isOpen, onClose, addToast, initialTab = 'general
     }
   };
 
+  // Восстановление затирает текущие данные — только через confirm.
+  const handleRestoreRun = async (run: BackupRun) => {
+    if (!confirm(t('settings.confirmRestore', { file: run.file }))) return;
+    setRestoreBusy(run.id);
+    try {
+      await api.restoreBackupRun(run.id);
+      await fetchBackups();
+      addToast(t('settings.restoreDone'), 'success');
+    } catch (e: any) {
+      addToast(t('settings.errorRestore') + e.message, 'error');
+    } finally {
+      setRestoreBusy(null);
+    }
+  };
+
+  const handleDownloadRun = async (run: BackupRun) => {
+    try {
+      await api.downloadBackupRun(run.id, run.file);
+    } catch (e: any) {
+      addToast(t('settings.errorDownload') + e.message, 'error');
+    }
+  };
+
   React.useEffect(() => {
     if (!isOpen) return;
     setSettingsLoading(true);
@@ -138,6 +258,7 @@ export function SettingsModal({ isOpen, onClose, addToast, initialTab = 'general
         setToastsEnabled(settings.toastsEnabled);
         setToastDuration(settings.toastDuration);
         setNotificationsEnabled(settings.notificationsEnabled);
+        setSessionTtlMin(settings.sessionTtlMin ?? 720);
         setEnabledKinds(settings.enabledKinds?.length ? settings.enabledKinds : [...ALL_KINDS]);
       })
       .catch((e) => addToast(t('settings.errorLoad') + e.message, 'error'))
@@ -218,7 +339,7 @@ export function SettingsModal({ isOpen, onClose, addToast, initialTab = 'general
 
   const handleSave = async () => {
     try {
-       const saved = await api.saveSettings({ projectName, timezone, theme, checkUpdates, toastsEnabled, toastDuration, notificationsEnabled, enabledKinds });
+       const saved = await api.saveSettings({ projectName, timezone, theme, checkUpdates, toastsEnabled, toastDuration, notificationsEnabled, enabledKinds, sessionTtlMin });
       // Отдаём сохранённые значения наверх, чтобы projectName/тема в App
       // обновились сразу, а не после переавторизации
       onSaved?.(saved);
@@ -400,13 +521,67 @@ export function SettingsModal({ isOpen, onClose, addToast, initialTab = 'general
             {activeTab === 'security' && (
               <div className="space-y-6 max-w-lg">
                 <div className="p-4 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-900/30">
-                  <h4 className="font-medium text-blue-800 dark:text-blue-300 mb-2">Двухфакторная аутентификация (2FA)</h4>
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <h4 className="font-medium text-blue-800 dark:text-blue-300">{t('settings.twofaTitle')}</h4>
+                    <span className={`text-xs px-2 py-0.5 rounded ${twofaEnabled ? 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300' : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400'}`}>
+                      {twofaEnabled === null ? '…' : twofaEnabled ? t('settings.twofaOn') : t('settings.twofaOff')}
+                    </span>
+                  </div>
                   <p className="text-sm text-blue-600/80 dark:text-blue-400/80 mb-3">{t('settings.twofaHint')}</p>
-                   <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">{t('settings.twofaMissing')}</div>
+                  {!twofaEnabled && twofaStep === 'idle' && (
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="password"
+                        value={twofaPassword}
+                        onChange={(e) => setTwofaPassword(e.target.value)}
+                        placeholder={t('settings.twofaPassword')}
+                        className="flex-1 min-w-0 px-3 py-2 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-[#151923] text-sm text-gray-900 dark:text-white focus:border-blue-500 outline-none"
+                      />
+                      <button onClick={() => void handleTwofaSetup()} disabled={twofaBusy} className="px-3 py-2 rounded-md text-sm font-medium bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white transition-colors shrink-0">
+                        {t('settings.twofaStart')}
+                      </button>
+                    </div>
+                  )}
+                  {!twofaEnabled && twofaStep === 'confirm' && (
+                    <div className="space-y-2 rounded-md bg-white dark:bg-[#151923] border border-gray-200 dark:border-gray-700 p-3">
+                      <p className="text-xs text-gray-500 dark:text-gray-400">{t('settings.twofaSecretHint')}</p>
+                      <div className="flex items-center gap-2">
+                        <code className="flex-1 min-w-0 break-all font-mono text-xs bg-gray-100 dark:bg-gray-800 rounded px-2 py-1 text-gray-900 dark:text-gray-100">{twofaSecret}</code>
+                        <button onClick={() => void handleTwofaCopy()} className="text-xs text-blue-600 dark:text-blue-400 hover:underline shrink-0">{t('settings.twofaCopy')}</button>
+                      </div>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 break-all font-mono">{twofaUrl}</p>
+                      <div className="flex items-center gap-2">
+                        <input
+                          value={twofaCode}
+                          onChange={(e) => setTwofaCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                          inputMode="numeric"
+                          placeholder="123456"
+                          className="flex-1 min-w-0 px-3 py-2 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-[#151923] text-sm text-center tracking-[0.4em] text-gray-900 dark:text-white focus:border-blue-500 outline-none"
+                        />
+                        <button onClick={() => void handleTwofaEnable()} disabled={twofaBusy} className="px-3 py-2 rounded-md text-sm font-medium bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white transition-colors shrink-0">
+                          {t('settings.twofaEnable')}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  {twofaEnabled && (
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="password"
+                        value={twofaPassword}
+                        onChange={(e) => setTwofaPassword(e.target.value)}
+                        placeholder={t('settings.twofaPassword')}
+                        className="flex-1 min-w-0 px-3 py-2 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-[#151923] text-sm text-gray-900 dark:text-white focus:border-blue-500 outline-none"
+                      />
+                      <button onClick={() => void handleTwofaDisable()} disabled={twofaBusy} className="px-3 py-2 rounded-md text-sm font-medium border border-red-300 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 transition-colors shrink-0">
+                        {t('settings.twofaDisable')}
+                      </button>
+                    </div>
+                  )}
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Таймаут сессии (минуты)</label>
-                   <input type="number" value="30" disabled className="w-full px-3 py-2 rounded-md border border-gray-300 dark:border-gray-700 bg-gray-100 dark:bg-[#151923] text-gray-500 dark:text-gray-400 outline-none" />
+                  <label className="text-sm font-medium text-gray-700 dark:text-gray-300">{t('settings.sessionTimeout')}</label>
+                   <input type="number" min={5} max={43200} step={5} value={sessionTtlMin} onChange={(e) => setSessionTtlMin(Number(e.target.value))} className="w-full px-3 py-2 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-[#151923] text-gray-900 dark:text-white focus:border-blue-500 outline-none" />
                    <p className="text-xs text-gray-500 dark:text-gray-400">{t('settings.jwtTimeout')}</p>
                 </div>
               </div>
@@ -440,7 +615,7 @@ export function SettingsModal({ isOpen, onClose, addToast, initialTab = 'general
                        {backupSchedules.map(schedule => (
                          <div key={schedule.id} className="rounded-md border border-gray-200 dark:border-gray-800 px-3 py-2 text-sm">
                            <div className="flex items-center justify-between gap-2">
-                             <span className="truncate">{schedule.db || t('settings.allDatabases')} · {schedule.format} · каждые {schedule.intervalMin} мин. · хранить {schedule.keepLast}</span>
+                             <span className="truncate">{t('settings.scheduleSummary', { db: schedule.db || t('settings.allDatabases'), format: schedule.format, min: schedule.intervalMin, keep: schedule.keepLast })}</span>
                              <span className={`text-xs shrink-0 ${schedule.enabled ? 'text-green-600' : 'text-gray-400'}`}>{schedule.enabled ? t('settings.scheduleOn') : t('settings.scheduleOff')}</span>
                            </div>
                            <div className="mt-2 flex gap-3 text-xs">
@@ -449,6 +624,33 @@ export function SettingsModal({ isOpen, onClose, addToast, initialTab = 'general
                              </button>
                              <button onClick={() => handleDeleteSchedule(schedule)} disabled={scheduleBusy} className="text-red-500 hover:underline disabled:opacity-50">{t('settings.remove')}</button>
                            </div>
+                            <div className="mt-2 border-t border-gray-100 dark:border-gray-800 pt-2">
+                              <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">{t('settings.backupCopies')}</div>
+                              {(backupRuns[schedule.id] ?? []).length === 0 ? (
+                                <p className="text-xs text-gray-400">{t('settings.noRuns')}</p>
+                              ) : (
+                                <div className="space-y-1">
+                                  {(backupRuns[schedule.id] ?? []).map(run => (
+                                    <div key={run.id} className="flex items-center justify-between gap-2 text-xs">
+                                      <span className="truncate font-mono" title={run.file}>
+                                        {formatDateTime(run.at, lang)} · {(run.bytes / 1024).toFixed(1)} KiB · {run.tables} {t('settings.tablesUnit')}
+                                        {!run.ok && <span className="ml-1 text-red-500">· {run.error || t('settings.runFailed')}</span>}
+                                      </span>
+                                      {Boolean(run.ok) && (
+                                        <span className="flex gap-2 shrink-0">
+                                          <button onClick={() => void handleRestoreRun(run)} disabled={restoreBusy !== null} className="text-blue-600 dark:text-blue-400 hover:underline disabled:opacity-50">
+                                            {restoreBusy === run.id ? '…' : t('settings.restore')}
+                                          </button>
+                                          <button onClick={() => void handleDownloadRun(run)} className="text-gray-500 dark:text-gray-400 hover:underline">
+                                            {t('settings.download')}
+                                          </button>
+                                        </span>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
                          </div>
                        ))}
                      </div>
