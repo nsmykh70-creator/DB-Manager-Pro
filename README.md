@@ -939,7 +939,9 @@ allowlist `BTREE/HASH/FULLTEXT/SPATIAL/GIN/GIST/BRIN` (PG-специфичные
 Представления входят в `listTables` всех четырёх SQL-драйверов (MySQL — через `SHOW TABLES`,
 PG — `pg_tables` + `pg_views`, SQLite — `sqlite_master`, Oracle — `user_tables` + `user_views`),
 поэтому видны в навигации, читаются (`rows`, `getPage`) и переживают ER-граф; `kind` в схеме —
-`view` (Oracle определяется через `user_views`). Дубли и отсутствие маппятся в 409/404
+`view` (Oracle определяется через `user_views`). `GET .../tables?withKind=1` отдаёт
+`[{name, kind}]` для бейджа VIEW и удаления: UI удаляет представление своим роутом
+(одиночное и массовое удаление ветвятся по kind), `DROP TABLE` на view не уходит. Дубли и отсутствие маппятся в 409/404
 (`translateDriverError`, включая кривой код MariaDB и `Unknown VIEW`), а не в 500.
 Проверка: `npm run e2e:views` (входит в `e2e:all`).
 

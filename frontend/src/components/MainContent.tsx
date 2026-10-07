@@ -144,7 +144,12 @@ export function MainContent({ activeDb, activeConnId, activeConn, databases, dat
   const handleBulkDrop = async () => {
     if (!activeConnId || !activeDb || confirmModal.items.length === 0) return;
     setBulkLoading(true);
-    const results = await Promise.allSettled(confirmModal.items.map(name => api.dropTable(activeConnId, activeDb, name)));
+    const byName = new Map(tables.map(t => [t.name, t.kind]));
+    const results = await Promise.allSettled(confirmModal.items.map(name =>
+      byName.get(name) === 'view'
+        ? api.dropView(activeConnId, activeDb, name)
+        : api.dropTable(activeConnId, activeDb, name)
+    ));
     const succeeded = results.flatMap((result, index) => result.status === 'fulfilled' ? [confirmModal.items[index]] : []);
     const failed = results.flatMap((result, index) => result.status === 'rejected' ? [`${confirmModal.items[index]}: ${result.reason?.message || result.reason}`] : []);
     setTables(prev => prev.filter(t => !succeeded.includes(t.name)));
@@ -329,9 +334,9 @@ export function MainContent({ activeDb, activeConnId, activeConn, databases, dat
     (async () => {
       setLoadingTables(true);
       try {
-        const tableNames = await api.tables(activeConnId, activeDb);
+        const tableNames = await api.tablesWithKind(activeConnId, activeDb);
         if (cancelled) return;
-        const tableList: Table[] = tableNames.map(name => ({ name }));
+        const tableList: Table[] = tableNames.map(({ name, kind }) => ({ name, kind }));
         setTables(tableList);
         setActiveTable(null);
       } catch (e: any) {
@@ -406,6 +411,19 @@ export function MainContent({ activeDb, activeConnId, activeConn, databases, dat
   // означало «удалить всё, что в ней было», а узнать об этом можно было только post factum.
   const dropTable = useCallback(async (tableName: string) => {
     if (!activeConnId || !activeDb) return;
+    // Представления удаляются своим роутом: DROP TABLE на view упадёт.
+    const isView = tables.some(t => t.name === tableName && t.kind === 'view');
+    if (isView) {
+      if (!confirm(t('bulk.dropTableTitle', { name: tableName }))) return;
+      try {
+        await api.dropView(activeConnId, activeDb, tableName);
+        setTables(prev => prev.filter(t => t.name !== tableName));
+        addToast(t('main.tableDropped', { name: tableName }), 'success');
+      } catch (e: any) {
+        addToast(t('main.errorDelete') + e.message, 'error');
+      }
+      return;
+    }
     let preview: { exists: boolean; rowsApprox: number; operation: string } | null = null;
     try {
       preview = await api.dropTablePreview(activeConnId, activeDb, tableName);
@@ -431,7 +449,7 @@ export function MainContent({ activeDb, activeConnId, activeConn, databases, dat
     } catch (e: any) {
       addToast(t('main.errorDelete') + e.message, 'error');
     }
-  }, [activeConnId, activeDb, addToast]);
+  }, [activeConnId, activeDb, addToast, tables]);
   // Truncate real table
   const truncateTable = useCallback(async (tableName: string) => {
     if (!activeConnId || !activeDb || !activeConn) return;
@@ -814,7 +832,7 @@ const workspaceRef = useRef<HTMLDivElement>(null);
                   />
                 </td>
                 <td className="px-2 py-3 font-medium text-blue-600 dark:text-blue-400 min-w-0">
-                  <button onClick={() => onTableSelect(table.name)} title={table.name} className="block w-full truncate text-left hover:underline">{table.name}</button>
+                  <button onClick={() => onTableSelect(table.name)} title={table.name} className="block w-full truncate text-left hover:underline">{table.name}{table.kind === 'view' && <span className="ml-2 text-[10px] font-normal px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 align-middle">VIEW</span>}</button>
                 </td>
                 <td className="px-2 py-3 min-w-0">
                   {/* Кнопки переносятся, а не сжимаются в ноль: в узкой панели

@@ -9,10 +9,11 @@ export interface ToastMessage {
 
 export type DatabaseType = 'mysql' | 'sqlite' | 'mongodb' | 'mariadb' | 'postgresql' | 'redis' | 'oracle';
 
-// Бэкенд отдаёт только список имён таблиц (/tables), поэтому в модели
-// нет выдуманных rows/type/collation/size/fragmentation — они не приходят из API.
+// Бэкенд отдаёт список имён таблиц (/tables); kind подтягивается отдельным
+// запросом ?withKind=1 там, где нужен (бейдж VIEW, удаление представлений).
 export interface Table {
   name: string;
+  kind?: 'table' | 'view';
 }
 
 export interface Database {

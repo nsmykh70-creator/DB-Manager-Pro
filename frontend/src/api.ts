@@ -475,9 +475,11 @@ export const api = {
       method: 'DELETE',
     }),
 
-  // Tables
+  // Tables (?withKind=1 отдаёт [{name, kind}] для бейджа VIEW и удаления views)
   tables: (connId: string, db: string) =>
     request<string[]>(`/connections/${enc(connId)}/${enc(db)}/tables`),
+  tablesWithKind: (connId: string, db: string) =>
+    request<{ name: string; kind: 'table' | 'view' }[]>(`/connections/${enc(connId)}/${enc(db)}/tables?withKind=1`),
   schema: (connId: string, db: string, table: string) =>
     request<unknown>(`/connections/${enc(connId)}/${enc(db)}/${enc(table)}/schema`),
   rows: (connId: string, db: string, table: string, params?: { page?: number; pageSize?: number; sort?: string; filter?: string }) => {

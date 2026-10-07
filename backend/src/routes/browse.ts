@@ -46,8 +46,22 @@ export function browseRoutes(app: FastifyInstance, cfg: AppConfig): void {
   app.get('/api/connections/:id/:db/tables', async (req) => {
     const { id, db } = req.params as { id: string; db: string };
     const cc = loadDecrypted(cfg.metaPath, cfg.encryptionKeyHex, id);
+    const dbname = decodeURIComponent(db);
+    const d = need(cc.kind);
     try {
-      return await need(cc.kind).listTables(cc, decodeURIComponent(db));
+      const names = await d.listTables(cc, dbname);
+      // ?withKind=1 — kind каждого объекта (нужен удалению views и бейджу VIEW).
+      // Схемы тянем параллельно с тем же лимитом, что ER (100): упавшая таблица
+      // не роняет список, ей достаётся kind 'table'.
+      if (((req.query ?? {}) as { withKind?: string }).withKind === '1') {
+        const settled = await Promise.allSettled(names.slice(0, 100).map((t) => d.getSchema(cc, dbname, t)));
+        return names.map((name, i) => {
+          const r = settled[i];
+          const kind = r && r.status === 'fulfilled' && (r.value as { kind?: string }).kind === 'view' ? 'view' : 'table';
+          return { name, kind };
+        });
+      }
+      return names;
     } catch (e: any) {
       if (cc.kind === 'sqlite' && cc.filePath && !existsSync(cc.filePath)) return [];
       throw Object.assign(e, { statusCode: e?.statusCode ?? 502 });

@@ -44,6 +44,9 @@ async function cycle(key, c, db, idType) {
   check(`${key} createView`, /CREATE VIEW/i.test(created.statement), created.statement.slice(0, 100));
   const tables = await req('GET', `/api/connections/${c.id}/${db}/tables`, T);
   check(`${key} view listed`, tables.includes(VIEW), tables.join(','));
+  const withKind = await req('GET', `/api/connections/${c.id}/${db}/tables?withKind=1`, T);
+  const entry = withKind.find((t) => t.name === VIEW);
+  check(`${key} withKind marks view`, entry?.kind === 'view', JSON.stringify(entry));
   const schema = await req('GET', `/api/connections/${c.id}/${db}/${VIEW}/schema`, T);
   check(`${key} view kind+cols`, schema.kind === 'view' && schema.columns.map((col) => col.name).join(',') === 'id,title', JSON.stringify(schema.columns.map((col) => col.name)));
   const page = await req('GET', `/api/connections/${c.id}/${db}/${VIEW}/rows?page=1&pageSize=10`, T);
