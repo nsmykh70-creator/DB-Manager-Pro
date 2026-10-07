@@ -47,7 +47,7 @@ const USER = 'e2e_2fa';
 const PASS = 'TwofaCheck123';
 // чистка от прошлого падения
 const existing = await req('GET', '/api/auth/users', T);
-for (const u of existing.filter((x) => x.username === USER)) await req('DELETE', `/api/auth/users/${u.id}`, T).catch(() => {});
+for (const u of existing.filter((x) => [USER, 'e2e_lock'].includes(x.username))) await req('DELETE', `/api/auth/users/${u.id}`, T).catch(() => {});
 await req('POST', '/api/auth/users', T, { username: USER, password: PASS, role: 'editor' });
 
 // вход без 2FA — полный токен сразу
@@ -109,11 +109,14 @@ const back = await req('POST', '/api/auth/login', null, { username: USER, passwo
 check('вход снова одношаговый', Boolean(back.token) && !back.need2fa, '');
 
 // Перебор пароля: 10 неудач подряд — 11-я уже 429 (блокировка на 15 минут).
-// Ключ включает имя пользователя, поэтому другие учётки не страдают.
+// Ключ включает имя пользователя, поэтому мучаем одноразового e2e_lock:
+// блокировка живёт в памяти сервера и пережила бы следующий прогон,
+// если бы висеть осталась на переиспользуемом e2e_2fa.
+await req('POST', '/api/auth/users', T, { username: 'e2e_lock', password: 'LockCheck123', role: 'editor' });
 let last = 0;
 for (let i = 0; i < 11; i++) {
   try {
-    await req('POST', '/api/auth/login', null, { username: USER, password: 'Wrong-pass-1' });
+    await req('POST', '/api/auth/login', null, { username: 'e2e_lock', password: 'Wrong-pass-1' });
     last = 200;
   } catch (e) { last = e.status; }
 }
@@ -121,7 +124,7 @@ check('перебор заблокирован (429)', last === 429, `status=${l
 
 // чистка
 const users = await req('GET', '/api/auth/users', T);
-for (const u of users.filter((x) => x.username === USER)) await req('DELETE', `/api/auth/users/${u.id}`, T);
+for (const u of users.filter((x) => [USER, 'e2e_lock'].includes(x.username))) await req('DELETE', `/api/auth/users/${u.id}`, T);
 
 if (failures) { console.log(`FAILURES: ${failures}`); process.exitCode = 1; }
 else console.log('2FA ALL GREEN');

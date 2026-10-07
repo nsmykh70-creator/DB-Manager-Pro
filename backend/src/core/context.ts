@@ -133,12 +133,33 @@ export async function deleteConnection(metaPath: string, id: string): Promise<vo
 }
 
 /** Загрузить конфиг + расшифровать пароль в память (нигде не логировать). */
+const decryptedCache = new Map<string, { fp: string; password?: string }>();
 export function loadDecrypted(metaPath: string, keyHex: string, id: string): ConnectionConfig {
   const db = openMeta(metaPath);
   const r = db.prepare(`SELECT * FROM connections WHERE id=?`).get(id) as Record<string, unknown> | undefined;
-  if (!r) throw Object.assign(new Error('Connection not found'), { statusCode: 404 });
+  if (!r) {
+    decryptedCache.delete(`${metaPath} ${id}`);
+    throw Object.assign(new Error('Connection not found'), { statusCode: 404 });
+  }
   const cfg = rowToCfg(r);
-  if (r.passwordCipher) cfg.password = decrypt(String(r.passwordCipher), keyHex);
+  // scryptSync ~60 мс и блокирует event loop: под конкурентной нагрузкой это
+  // складывалось в ~600 мс очереди на каждый запрос. Кэшируем расшифровку по
+  // отпечатку строки: SELECT всё равно нужен, а повторный scrypt — нет.
+  // Инвалидация автоматическая (PATCH/ротация меняют строку → другой fp).
+  // Пароль и так живёт в памяти (пулы соединений), нового риска нет.
+  const cacheKey = `${metaPath} ${id}`;
+  const fp = JSON.stringify(r);
+  const hit = decryptedCache.get(cacheKey);
+  if (hit && hit.fp === fp) {
+    cfg.password = hit.password;
+  } else {
+    cfg.password = r.passwordCipher ? decrypt(String(r.passwordCipher), keyHex) : undefined;
+    decryptedCache.set(cacheKey, { fp, password: cfg.password });
+    if (decryptedCache.size > 5000) {
+      const first = decryptedCache.keys().next();
+      if (!first.done) decryptedCache.delete(first.value);
+    }
+  }
   // Oracle: поле «база» в подключении — это имя сервиса, и выбранная в
   // интерфейсе схема его затирает. Запоминаем сервис один раз при загрузке,
   // чтобы connect string не зависел от того, какую схему открыл пользователь.

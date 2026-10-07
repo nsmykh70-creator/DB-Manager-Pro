@@ -91,7 +91,8 @@
     "e2e:column-edit-hints": "node e2e-column-edit-hints.mjs",
     "e2e:logs-cancel": "node e2e-logs-clear-cancel.mjs",
     "e2e:ui-audit": "node e2e-ui-audit.mjs",
-    "e2e:modal-size": "node e2e-modal-size.mjs"
+    "e2e:modal-size": "node e2e-modal-size.mjs",
+    "load:test": "node scripts-load-test.mjs"
   },
   "allowScripts": {
     "esbuild@0.28.2": true,

@@ -5,6 +5,7 @@ import { hashPass, signToken, signTempToken, verifyPass, verifyTokenPayload, aut
 import { generateSecret, otpauthUrl, verifyTotp } from '../core/totp.js';
 import { readSessionTtlMin } from './settings.js';
 import { openMeta } from '../core/store.js';
+import { audit } from '../core/context.js';
 
 function actor(req: unknown): string | null {
   return ((req as { user?: PanelUser }).user?.username) ?? null;
@@ -35,6 +36,7 @@ export function authRoutes(app: FastifyInstance, cfg: AppConfig): void {
     if (!r || !(await verifyPass(password, r.passHash))) {
       authFailed(throttleKey);
       await new Promise((res) => setTimeout(res, 300)); // anti-bruteforce задержка
+      audit(cfg.metaPath, null, 'auth.login', username, false, 0, username);
       throw Object.assign(new Error('Bad credentials'), { statusCode: 401 });
     }
     authOk(throttleKey);

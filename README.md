@@ -153,6 +153,9 @@ npm run dev:frontend                       # = npm run dev -w frontend → vite 
 | `npm run e2e:kinds` | API-проверка настройки `enabledKinds`: сохранение, нормализация, права |
 | `npm run e2e:kinds-browser` | браузерная проверка тумблеров типов СУБД: выключенный тип исчезает из боковых панелей |
 | `npm run e2e:full` | `e2e-preflight` + браузерные проверки + язык + тумблеры типов + `e2e:all` — один полный прогон |
+| `npm run load:test` | нагрузка без зависимостей (10 воркеров × 60 итераций по health/tables/rows/schema/query): 600 запросов, p50/p95/max и счётчик ошибок |
+
+> Держитесь ниже `RATE_LIMIT_MAX`, иначе меряете лимитер, а не сервер.
 
 Backend-only: `npm run build -w backend`, `npm run start -w backend` (`node dist/index.js`),
 `npm run rotate:key -w backend` (ротация `ENCRYPTION_KEY` для `meta.db`), а также проверка
