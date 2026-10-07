@@ -1,0 +1,2 @@
+# DB-Manager-Pro
+Управление базами данных MYSQL MARIADB POSTGRESQL ORACLE SQLITE MONGODB
