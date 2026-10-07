@@ -239,6 +239,21 @@ export function RightSidebar({
     }
   };
 
+  // Корзина Oracle необратимо: спрашиваем дважды — сначала confirm, потом сервер
+  // делает PURGE RECYCLEBIN. После — обновить статус (размеры) и список таблиц.
+  const handlePurgeRecycleBin = async () => {
+    if (!connId || userRole === 'readonly' || connectionReadOnly) return;
+    if (!confirm(t('right.purgeConfirm'))) return;
+    try {
+      await api.purgeRecycleBin(connId);
+      addToast(t('right.purgeDone'), 'success');
+      fetchStatus();
+      onTablesChanged?.();
+    } catch (e: any) {
+      addToast(t('right.errorPurge') + errorText(e), 'error');
+    }
+  };
+
   const formatUptime = (sec?: number) => {
     if (!sec) return '-';
     const d = Math.floor(sec / 86400);
@@ -499,6 +514,12 @@ export function RightSidebar({
             <RefreshCw className="w-4 h-4 text-gray-500 dark:text-gray-400" />
             <span>{t('right.checkDb')}</span>
           </button>
+          {connKind === 'oracle' && userRole !== 'readonly' && !connectionReadOnly && (
+            <button title={t('right.purgeRecycle')} onClick={() => void handlePurgeRecycleBin()} disabled={!connId} className="w-full flex items-center gap-2 px-3 py-2 text-left rounded-md hover:bg-gray-200 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300 transition-colors disabled:opacity-50">
+              <Trash2 className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+              <span>{t('right.purgeRecycle')}</span>
+            </button>
+          )}
           <button title={t('right.backup')} onClick={openSettings} className="w-full flex items-center gap-2 px-3 py-2 text-left rounded-md hover:bg-gray-200 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300 transition-colors">
             <Settings className="w-4 h-4 text-gray-500 dark:text-gray-400" />
             <span>{t('right.backup')}</span>

@@ -224,6 +224,16 @@ export interface DbDriver {
   /** Конструктор: удалить представление. */
   dropView?(cfg: ConnectionConfig, db: string, name: string): Promise<{ ok: true; statement: string }>;
   /**
+   * Очистить корзину удалённых объектов (Oracle `PURGE RECYCLEBIN`).
+   * Остальные СУБД корзины не имеют → метод не определён → 400.
+   */
+  purgeRecycleBin?(cfg: ConnectionConfig): Promise<{ ok: true; statement: string }>;
+  /**
+   * Схемы PostgreSQL (`CREATE SCHEMA`). Остальные СУБД: у MySQL/MariaDB схема =
+   * база, у Oracle схема = пользователь, у SQLite/MongoDB/Redis схем нет —
+   * метод не определён → 400.
+   */
+  /**
    * Схемы PostgreSQL (`CREATE SCHEMA`). Остальные СУБД: у MySQL/MariaDB схема =
    * база, у Oracle схема = пользователь, у SQLite/MongoDB/Redis схем нет —
    * метод не определён → 400.

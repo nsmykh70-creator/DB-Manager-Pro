@@ -617,10 +617,15 @@ export const api = {
   createSchema: (connId: string, db: string, name: string) =>
     request<DesignResult>(`/connections/${enc(connId)}/${enc(db)}/schemas`, {
       method: 'POST', body: JSON.stringify({ name }),
-    }),
-  dropSchema: (connId: string, db: string, name: string, cascade = false) =>
+    }),  dropSchema: (connId: string, db: string, name: string, cascade = false) =>
     request<DesignResult & { cascade?: boolean }>(`/connections/${enc(connId)}/${enc(db)}/schemas/${enc(name)}${cascade ? '?cascade=1' : ''}`, {
       method: 'DELETE',
+    }),
+
+  /** Корзина Oracle: удалить всё из recycle bin разом (необратимо). */
+  purgeRecycleBin: (connId: string) =>
+    request<DesignResult>(`/connections/${enc(connId)}/purge`, {
+      method: 'POST',
     }),
 
   // ER Diagram

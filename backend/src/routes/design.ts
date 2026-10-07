@@ -407,6 +407,25 @@ export function designRoutes(app: FastifyInstance, cfg: AppConfig): void {
     return r;
   });
 
+  // Корзина Oracle: удалить все объекты из recycle bin разом.
+  // Восстановить их после этого уже нельзя (в отличие от обычного DROP,
+  // который в корзину и складывает), поэтому только через confirm в UI.
+  app.post('/api/connections/:id/purge', async (req) => {
+    const u = me(req);
+    assertRoleWritable(u?.role, 'purge recyclebin');
+    const { id } = req.params as { id: string };
+    const cc = loadDecrypted(cfg.metaPath, cfg.encryptionKeyHex, id);
+    assertNotReadOnly(cc);
+    const drv = getDriver(cc.kind);
+    if (!drv?.purgeRecycleBin) throw Object.assign(new Error(`Recycle bin is not supported for ${cc.kind}`), { statusCode: 400 });
+    const t0 = Date.now();
+    const r = await drv.purgeRecycleBin(cc);
+    const execMs = Date.now() - t0;
+    audit(cfg.metaPath, id, 'design.purge', cc.kind, true, execMs, u?.username);
+    if (u) addHistory(cfg.metaPath, { connId: id, userId: u.id, username: u.username, db: cc.database ?? null, sql: r.statement, ok: true, execMs });
+    return r;
+  });
+
   // Создать схему (только PostgreSQL; у остальных — 400)
   app.post('/api/connections/:id/:db/schemas', async (req) => {
     const u = me(req);

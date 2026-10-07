@@ -259,6 +259,12 @@ const XN = 'mdl_xparent', XC = 'mdl_xchild';
   await req('DELETE', `/api/connections/${conn.id}/${db}/${XC}`, T);
   await req('DELETE', `/api/connections/${conn.id}/${db}/${XN}`, T);
   await req('DELETE', `/api/models/${model.id}`, T);
+  // DROP складывает таблицы в корзину (BIN$...): без PURGE список размеров
+  // зарастает несъедобными строками после каждого прогона.
+  const purged = await req('POST', `/api/connections/${conn.id}/purge`, T).catch((e) => e);
+  check('корзина очищена', purged.statement === 'PURGE RECYCLEBIN', JSON.stringify(purged).slice(0, 80));
+  const sizes = await req('GET', `/api/connections/${conn.id}/status`, T);
+  check('в размерах нет корзины', !(sizes.dbSizes ?? []).some((x) => String(x.db).includes('BIN$')), JSON.stringify((sizes.dbSizes ?? []).map((x) => x.db).slice(0, 5)));
 }
 
 if (failures) { console.log(`FAILURES: ${failures}`); process.exit(1); }

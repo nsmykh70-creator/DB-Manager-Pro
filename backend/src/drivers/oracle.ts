@@ -213,9 +213,12 @@ export const oracleDriver: DbDriver = {
     // PLAN_TABLE — служебная таблица панели для EXPLAIN PLAN, её создаёт сам
     // драйвер; пользователю она не принадлежит, поэтому в список не попадает.
     // Представления (user_views) — тоже объекты списка, как у MySQL/SQLite.
+    // BIN$ — корзина удалённых таблиц: без фильтра список зарастает мусором,
+    // который нельзя ни открыть, ни удалить из панели.
     const r = await rows(
       cfg,
-      `SELECT table_name AS name FROM user_tables WHERE table_name <> 'PLAN_TABLE'
+      `SELECT table_name AS name FROM user_tables
+        WHERE table_name <> 'PLAN_TABLE' AND table_name NOT LIKE 'BIN$%'
        UNION ALL SELECT view_name AS name FROM user_views ORDER BY name`
     );
     return r.map((x) => String(x.name));
@@ -465,7 +468,11 @@ c.column_id AS ordinal,
     } catch (e) {
       console.warn(`[oracle] v$session недоступна (${(e as Error).message}): список процессов пуст`);
     }
-    const sizes = await rows(cfg, `SELECT segment_name AS tbl, bytes FROM user_segments WHERE segment_type = 'TABLE' ORDER BY bytes DESC`);
+    // Корзина (BIN$...) и служебная PLAN_TABLE — не объекты пользователя:
+    // без фильтра правая панель зарастала десятками несъедобных строк по 64 KiB.
+    const sizes = await rows(cfg, `SELECT segment_name AS tbl, bytes FROM user_segments
+      WHERE segment_type = 'TABLE' AND segment_name <> 'PLAN_TABLE' AND segment_name NOT LIKE 'BIN$%'
+      ORDER BY bytes DESC`);
     const own = await rows(cfg, `SELECT USER AS db FROM dual`);
     const schema = own.length ? String(own[0].db) : '';
     return {
@@ -579,6 +586,12 @@ c.column_id AS ordinal,
   async dropView(cfg, _db, name) {
     assertWritable(cfg, 'drop view');
     const statement = `DROP VIEW "${obj(name, 'table')}"`;
+    await run(cfg, statement);
+    return { ok: true as const, statement };
+  },
+  async purgeRecycleBin(cfg) {
+    assertWritable(cfg, 'purge recyclebin');
+    const statement = 'PURGE RECYCLEBIN';
     await run(cfg, statement);
     return { ok: true as const, statement };
   },

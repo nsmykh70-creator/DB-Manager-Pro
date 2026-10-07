@@ -53,6 +53,10 @@ export const translations: Record<string, any> = {
       import: 'Импорт',
       export: 'Экспорт',
       checkDb: 'Проверить базу',
+      purgeRecycle: 'Очистить корзину',
+      purgeConfirm: 'Удалить все объекты из корзины Oracle? Восстановить их уже нельзя.',
+      purgeDone: 'Корзина очищена',
+      errorPurge: 'Ошибка очистки: ',
       backup: 'Резервное копирование'
     },
     main: {
@@ -183,6 +187,10 @@ export const translations: Record<string, any> = {
       import: 'Import',
       export: 'Export',
       checkDb: 'Check database',
+      purgeRecycle: 'Purge recycle bin',
+      purgeConfirm: 'Delete all objects from the Oracle recycle bin? They cannot be restored.',
+      purgeDone: 'Recycle bin purged',
+      errorPurge: 'Purge failed: ',
       backup: 'Backup settings'
     },
     main: {
@@ -325,6 +333,10 @@ export const translations: Record<string, any> = {
       import: 'Importieren',
       export: 'Exportieren',
       checkDb: 'Datenbank prüfen',
+      purgeRecycle: 'Papierkorb leeren',
+      purgeConfirm: 'Alle Objekte aus dem Oracle-Papierkorb löschen? Wiederherstellung unmöglich.',
+      purgeDone: 'Papierkorb geleert',
+      errorPurge: 'Fehler: ',
       backup: 'Backup-Einstellungen'
     },
     main: {
@@ -467,6 +479,10 @@ export const translations: Record<string, any> = {
       import: 'Importer',
       export: 'Exporter',
       checkDb: 'Vérifier la base',
+      purgeRecycle: 'Vider la corbeille',
+      purgeConfirm: 'Supprimer tous les objets de la corbeille Oracle ? Irréversible.',
+      purgeDone: 'Corbeille vidée',
+      errorPurge: 'Échec : ',
       backup: 'Paramètres de sauvegarde'
     },
     main: {
@@ -609,6 +625,10 @@ export const translations: Record<string, any> = {
       import: 'Importar',
       export: 'Exportar',
       checkDb: 'Comprobar BD',
+      purgeRecycle: 'Vaciar papelera',
+      purgeConfirm: '¿Eliminar todos los objetos de la papelera de Oracle? Irreversible.',
+      purgeDone: 'Papelera vaciada',
+      errorPurge: 'Error: ',
       backup: 'Copia de seguridad'
     },
     main: {
@@ -751,6 +771,10 @@ export const translations: Record<string, any> = {
       import: '导入',
       export: '导出',
       checkDb: '检查数据库',
+      purgeRecycle: '清空回收站',
+      purgeConfirm: '删除 Oracle 回收站中的所有对象？不可恢复。',
+      purgeDone: '回收站已清空',
+      errorPurge: '清理失败：',
       backup: '备份设置'
     },
     main: {
