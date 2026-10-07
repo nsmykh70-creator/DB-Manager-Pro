@@ -1,0 +1,89 @@
+services:
+  backend:
+    build: ./backend
+    ports: ["127.0.0.1:3002:3001"]
+    env_file: ./backend/.env
+    environment:
+      NODE_ENV: production
+      META_PATH: /data/meta.db
+      HOST: 0.0.0.0
+      REQUIRE_AUTH: 1
+    volumes: ["dbpanel-data:/data"]
+    # Чтобы подключаться к СУБД, запущенным на хосте машины, по имени
+    # host.docker.internal (на Linux без этого имени не резолвится).
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    depends_on:
+      mysql: { condition: service_healthy }
+      mariadb: { condition: service_healthy }
+      postgres: { condition: service_healthy }
+      mongo: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    healthcheck: { test: ["CMD", "node", "-e", "fetch('http://localhost:3001/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"], interval: 10s, timeout: 5s, retries: 5 }
+  frontend:
+    build: ./frontend
+    ports: ["127.0.0.1:3001:80"]
+    depends_on: { backend: { condition: service_healthy } }
+  mysql:
+    image: mysql:8.4
+    environment: { MYSQL_ROOT_PASSWORD: root, MYSQL_DATABASE: demo, MYSQL_USER: demo, MYSQL_PASSWORD: demo }
+    ports: ["127.0.0.1:3306:3306"]
+    volumes: ["mysql-data:/var/lib/mysql"]
+    # Лимиты памяти: без них пять СУБД на машине с 16 ГБ съедали всю память
+    # вместе с WSL, и Docker Desktop падал — контейнеры переставали отвечать
+    # без видимой ошибки. Значения заведомо выше реального потребления тестов.
+# MySQL упирался в 512 МБ (90% лимита) — это риск замедления и OOM-смертей
+    # СУБД, а через них и ошибок запросов schema/rows. Фактически ест ~460 МБ.
+    mem_limit: 1g
+    healthcheck: { test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-proot"], interval: 10s, timeout: 5s, retries: 10 }
+  mariadb:
+    image: mariadb:11.4
+    environment: { MARIADB_ROOT_PASSWORD: root, MARIADB_DATABASE: demo, MARIADB_USER: demo, MARIADB_PASSWORD: demo }
+    ports: ["127.0.0.1:3307:3306"]
+    volumes: ["mariadb-data:/var/lib/mysql"]
+    mem_limit: 512m
+    healthcheck: { test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"], interval: 10s, timeout: 5s, retries: 10 }
+  postgres:
+    image: postgres:16-alpine
+    environment: { POSTGRES_PASSWORD: root, POSTGRES_USER: root, POSTGRES_DB: demo }
+    ports: ["127.0.0.1:5432:5432"]
+    volumes: ["pg-data:/var/lib/postgresql/data"]
+    mem_limit: 512m
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U root -d demo"], interval: 10s, timeout: 5s, retries: 10 }
+  mongo:
+    image: mongo:7
+    ports: ["127.0.0.1:27017:27017"]
+    volumes: ["mongo-data:/data/db"]
+    mem_limit: 1g
+    healthcheck: { test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand({ ping: 1 }).ok"], interval: 10s, timeout: 5s, retries: 10 }
+  redis:
+    image: redis:7-alpine
+    ports: ["127.0.0.1:6379:6379"]
+    mem_limit: 256m
+    healthcheck: { test: ["CMD", "redis-cli", "ping"], interval: 10s, timeout: 5s, retries: 10 }
+  # Oracle вынесен в отдельный профиль: образ (gvenzl/oracle-free) весит
+  # ~2 ГБ, а сам инстанс просит ~1,5–2 ГБ RAM — на машине с 16 ГБ он вытесняет
+  # остальные пять СУБД. Поэтому обычный `dbs:up` его не поднимает, а
+  # `backend` не ждёт его healthcheck. Включается явно:
+  #   docker compose --profile oracle up -d --wait oracle
+  # и проверяется набором `npm run e2e:oracle`, который сам пропускает себя,
+  # если стенд не запущен.
+  oracle:
+    image: gvenzl/oracle-free:23-slim
+    profiles: ["oracle"]
+    environment:
+      ORACLE_PASSWORD: oracle
+      APP_USER: demo
+      APP_USER_PASSWORD: demo
+    ports: ["127.0.0.1:1521:1521"]
+    volumes: ["oracle-data:/opt/oracle/oradata"]
+    mem_limit: 2g
+    # Первый старт Oracle занимает 2–4 минуты (создаётся база), поэтому
+    # проверка терпеливее остальных.
+    healthcheck: { test: ["CMD-SHELL", "healthcheck.sh"], interval: 15s, timeout: 10s, retries: 40, start_period: 60s }
+volumes:
+  dbpanel-data: {}
+  mysql-data: {}
+  mariadb-data: {}
+  pg-data: {}
+  mongo-data: {}
+  oracle-data: {}

@@ -1,0 +1,68 @@
+name: CI
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env: { MYSQL_ROOT_PASSWORD: root, MYSQL_DATABASE: demo, MYSQL_USER: demo, MYSQL_PASSWORD: demo }
+        ports: ["3306:3306"]
+        options: --health-cmd "mysqladmin ping -h localhost" --health-interval 10s --health-timeout 5s --health-retries 10
+      # seed-dbs.mjs + e2e-dbs.mjs talk to MariaDB on 3307 (e2e-maria connection)
+      mariadb:
+        image: mariadb:11.4
+        env: { MARIADB_ROOT_PASSWORD: root, MARIADB_DATABASE: demo, MARIADB_USER: demo, MARIADB_PASSWORD: demo }
+        ports: ["3307:3306"]
+        options: --health-cmd "healthcheck.sh --connect --innodb_initialized" --health-interval 10s --health-timeout 5s --health-retries 10
+      postgres:
+        image: postgres:16-alpine
+        env: { POSTGRES_PASSWORD: root, POSTGRES_USER: root, POSTGRES_DB: demo }
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U root" --health-interval 10s --health-timeout 5s --health-retries 10
+      mongo:
+        image: mongo:7
+        ports: ["27017:27017"]
+        options: --health-cmd "mongosh --quiet --eval 'db.adminCommand({ ping: 1 }).ok'" --health-interval 10s --health-timeout 5s --health-retries 10
+      # e2e-redis.mjs needs a reachable redis (expects 16 logical DBs = default)
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: --health-cmd "redis-cli ping" --health-interval 10s --health-timeout 5s --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm run build -w backend
+      - run: npm run build -w frontend
+      - run: docker compose config --quiet
+
+      - name: e2e
+        env:
+          ENCRYPTION_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+          JWT_SECRET: "ci-secret-ci-secret-ci-secret-ci-secret-0123"
+          ADMIN_USER: admin
+          ADMIN_PASSWORD: testpass123
+          REQUIRE_AUTH: 1
+          META_PATH: ./data/meta.db
+          # NODE_ENV intentionally left unset: the production guard in
+          # core/config.ts rejects placeholder JWT/ENCRYPTION/ADMIN values.
+        run: |
+          set -euo pipefail
+          node backend/dist/index.js &
+          BACKEND_PID=$!
+          trap 'kill $BACKEND_PID 2>/dev/null || true' EXIT
+
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:3001/api/health > /dev/null; then break; fi
+            if ! kill -0 "$BACKEND_PID" 2>/dev/null; then echo "backend exited early"; wait "$BACKEND_PID" || true; exit 1; fi
+            sleep 2
+          done
+          curl -sf http://localhost:3001/api/health
+
+          npm run seed:dbs
+          npm run e2e:all

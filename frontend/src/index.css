@@ -1,0 +1,40 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Свойство color-scheme говорит браузеру, что элементы управления (выпадающие
+   списки, чекбоксы, полосы прокрутки) должны рисоваться в тёмной гамме.
+   Без него нативный <select> в тёмной теме сохранял светлый фон всплывающего
+   списка, а его параметры — тёмный текст: подпись в списке становилась
+   нечитаемой. Правило действует только при наличии класса .dark на <html>,
+   который ставит App.tsx, поэтому светлая тема не затрагивается. */
+.dark {
+  color-scheme: dark;
+}
+
+/* Глобальная перекраска gray-500/gray-600 в тёмной теме пробовалась и
+   удалена намеренно: правило вне @layer бьёт ЛЮБЫЕ utility-классы Tailwind,
+   включая осмысленные dark:text-*, и местами ухудшало контраст вместо
+   улучшения. Цвета задаются точечно в разметке. */
+
+/* Скрываем полосу прокрутки, оставляя саму прокрутку (колесо, перетаскивание,
+   клавиатура). Класс использовался в нескольких местах, но не был определён,
+   поэтому полоса прокрутки всё равно появлялась. */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+/* Ensure syntax highlighting is readable */
+.token.keyword { color: #c678dd; }
+.token.string { color: #98c379; }
+.token.number { color: #d19a66; }
+.token.function { color: #61afef; }
+.token.operator { color: #56b6c2; }
+.token.punctuation { color: #abb2bf; }
+.token.comment { color: #5c6370; font-style: italic; }

@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DB Manager Pro</title>
+    <meta name="description" content="Advanced database management web panel with SQL support, visual constructor, and monitoring." />
+    <meta property="og:title" content="DB Manager Pro" />
+    <meta property="og:description" content="Advanced database management web panel with SQL support, visual constructor, and monitoring." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+  </head>
+  <body>
+    <div id="error-display" style="color: red; padding: 20px; font-family: monospace; white-space: pre-wrap; z-index: 9999; position: fixed; background: #fee; width: 100%; top: 0; display: none;"></div>
+    <script>
+      window.addEventListener('error', function(e) {
+        var display = document.getElementById('error-display');
+        display.style.display = 'block';
+        display.textContent += e.message + '\n' + e.filename + ':' + e.lineno + '\n';
+      });
+      window.addEventListener('unhandledrejection', function(e) {
+        var display = document.getElementById('error-display');
+        display.style.display = 'block';
+        display.textContent += e.reason + '\n';
+      });
+    </script>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+

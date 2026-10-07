@@ -1,0 +1,30 @@
+node_modules/
+dist/
+backend/dist/
+frontend/dist/
+backend/data/
+backend/data/*.db
+backend/data/*.db-*
+backend/data/backups/
+backend/data/sqlite/
+backend/www/
+www/
+backend/node_modules/
+frontend/node_modules/
+
+.env
+.env.*
+!.env.example
+backend/.env
+*.log
+.DS_Store
+
+# --- legacy / scratch artifacts -------------------------------------------
+# Pre-monorepo prototype: old Express + node:sqlite app on :8787 (removed).
+server.mjs
+# Snapshot of frontend/src taken before the Windows-shell UI rewrite (removed).
+frontend/src.bak*
+*.bak
+# Standalone "db-manager-pro" design prototype (own package.json/bun.lock,
+# not an npm workspace, no longer built or served) (removed).
+design/
