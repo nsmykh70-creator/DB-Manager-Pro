@@ -202,7 +202,7 @@ export function CreateTableModal({ isOpen, onClose, onCreate, initialDialect = '
           <div>
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-sm font-bold text-gray-800 dark:text-gray-200 uppercase tracking-wider">
-                Поля таблицы ({fields.length})
+                {t('createTable.fieldsTitle', { count: fields.length })}
               </h3>
               <span className="text-xs text-gray-400">{t('createTable.pkHint')}</span>
             </div>
@@ -224,7 +224,7 @@ export function CreateTableModal({ isOpen, onClose, onCreate, initialDialect = '
                     <tr>
                       <th className="px-2 py-2.5 font-medium w-[6%] text-center" title={t('createTable.primaryKey')}>PK</th>
                       <th className="px-2 py-2.5 font-medium w-[20%] break-words">{t('createTable.fieldName')}</th>
-                      <th className="px-2 py-2.5 font-medium w-[20%] break-words">Тип ({currentConfig.name})</th>
+                      <th className="px-2 py-2.5 font-medium w-[20%] break-words">{t('createTable.typeHeader', { name: currentConfig.name })}</th>
                       <th className="px-2 py-2.5 font-medium w-[12%] break-words">{t('createTable.length')}</th>
                        <th className="px-2 py-2.5 font-medium w-[9%] text-center break-words">{t('createTable.null')}</th>
                        <th className="px-2 py-2.5 font-medium w-[19%] break-words">{t('createTable.default')}</th>
@@ -439,7 +439,7 @@ export function CreateTableModal({ isOpen, onClose, onCreate, initialDialect = '
                 >
                   <Plus className="w-4 h-4" />{t('createTable.addField')}</button>
                 <span className="text-xs text-gray-400 break-all">
-                  Выбрано Primary Key: {fields.filter(f => f.isPk).map(f => f.name || 'id').join(', ') || t('createTable.none')}
+                  {t('createTable.selectedPk', { list: fields.filter(f => f.isPk).map(f => f.name || 'id').join(', ') || t('createTable.none') })}
                 </span>
               </div>
             </div>
