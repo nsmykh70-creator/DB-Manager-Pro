@@ -16,17 +16,24 @@ function needAdmin(req: unknown): PanelUser {
 }
 
 export function authRoutes(app: FastifyInstance, cfg: AppConfig): void {
+  // Публичный флаг первоначальной настройки: true, пока хоть один пользователь
+  // сидит на дефолтном пароле. Экран входа по нему показывает подсказку
+  // «admin / admin»; после смены пароля подсказка исчезает сама.
+  app.get('/api/auth/setup', async () => {
+    const row = openMeta(cfg.metaPath).prepare(`SELECT COUNT(*) AS c FROM users WHERE mustChange=1`).get() as { c: number };
+    return { defaultCredentials: row.c > 0 };
+  });
   app.post('/api/auth/login', async (req) => {
     const { username, password } = (req.body ?? {}) as { username?: string; password?: string };
     if (!username || !password) throw Object.assign(new Error('username+password required'), { statusCode: 400 });
     const db = openMeta(cfg.metaPath);
-    const r = db.prepare(`SELECT * FROM users WHERE username=?`).get(username) as { id: string; username: string; passHash: string; role: Role } | undefined;
+    const r = db.prepare(`SELECT * FROM users WHERE username=?`).get(username) as { id: string; username: string; passHash: string; role: Role; mustChange?: number } | undefined;
     if (!r || !(await verifyPass(password, r.passHash))) {
       await new Promise((res) => setTimeout(res, 300)); // anti-bruteforce задержка
       throw Object.assign(new Error('Bad credentials'), { statusCode: 401 });
     }
     const user: PanelUser = { id: r.id, username: r.username, role: r.role };
-    return { token: signToken(user, cfg.jwtSecret), user };
+    return { token: signToken(user, cfg.jwtSecret), user, mustChangePassword: Number(r.mustChange ?? 0) === 1 };
   });
 
   app.get('/api/auth/me', async (req) => {
@@ -71,7 +78,8 @@ export function authRoutes(app: FastifyInstance, cfg: AppConfig): void {
     const values: unknown[] = [];
     if (username !== undefined) { fields.push('username=?'); values.push(username); }
     if (role !== undefined) { fields.push('role=?'); values.push(role); }
-    if (password !== undefined) { fields.push('passHash=?'); values.push(await hashPass(password)); }
+    // Смена пароля снимает флаг обязательной смены (первый вход с дефолтом).
+    if (password !== undefined) { fields.push('passHash=?'); values.push(await hashPass(password)); fields.push('mustChange=?'); values.push(0); }
     if (!fields.length) return { ok: true };
     values.push(id);
     try {

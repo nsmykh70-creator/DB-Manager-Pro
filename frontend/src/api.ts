@@ -408,9 +408,12 @@ export const api = {
 
   // Auth
   login: (username: string, password: string) =>
-    request<{ token: string; user: PanelUser }>('/auth/login', {
+    request<{ token: string; user: PanelUser; mustChangePassword?: boolean }>('/auth/login', {
       method: 'POST', body: JSON.stringify({ username, password }),
     }),
+  /** true, пока хоть один пользователь сидит на дефолтном пароле: экран входа
+   *  показывает подсказку admin/admin, после смены она исчезает сама. */
+  authSetup: () => request<{ defaultCredentials: boolean }>('/auth/setup'),
   logout: () => setAuthToken(null),
   me: () => request<{ user: PanelUser }>('/auth/me'),
   authUsers: () => request<PanelUser[]>('/auth/users'),

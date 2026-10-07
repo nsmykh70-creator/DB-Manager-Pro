@@ -244,6 +244,8 @@ npm run stack:up                        # docker compose up --build -d
 - `JWT_SECRET` — непустой и не содержит `dev|change|default|secret`;
 - `ENCRYPTION_KEY` — ровно 64 hex-символа и не одни нули;
 - `ADMIN_PASSWORD` — длиннее 12 символов и не начинается с `admin|password|testpass|change`.
+  Исключение — незаданный пароль (встроенный дефолт `admin`): он проходит guard, потому что
+  первый вход с ним заканчивается обязательной сменой (`mustChange`).
 
 С плейсхолдерами из `.env.example` контейнер **не поднимется** — это намеренно. В CI `NODE_ENV`
 намеренно не задан, иначе e2e-пароли были бы отвергнуты.
@@ -262,8 +264,8 @@ npm run stack:up                        # docker compose up --build -d
 | `HOST` | `127.0.0.1` (в Docker `0.0.0.0`) | адрес прослушивания |
 | `ENCRYPTION_KEY` | **обязателен** | 64 hex (32 байта) — мастер-ключ AES-256-GCM для паролей подключений. Генерация: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
 | `JWT_SECRET` | **обязателен** | подпись JWT (12 ч) |
-| `ADMIN_USER` | **обязателен** | логин первого администратора |
-| `ADMIN_PASSWORD` | **обязателен** | пароль первого администратора |
+| `ADMIN_USER` | `admin` | логин первого администратора |
+| `ADMIN_PASSWORD` | `admin` | пароль первого администратора. Можно не задавать: тогда вход — `admin` / `admin`, но первый вход заканчивается обязательной сменой логина и пароля (флаг `mustChange` в `users`, ответ `mustChangePassword` в `/auth/login`). Явно заданный слабый пароль production rejected; встроенный дефолт проходит guard именно потому, что оставить его нельзя |
 | `REQUIRE_AUTH` | `1` | `0` — отключить требование Bearer-токена (в UI экран входа пропускается) |
 | `QUERY_MAX_ROWS` | `1000` | лимит строк в `POST /query`; к `SELECT` без `LIMIT` добавляется `LIMIT 1000` |
 | `QUERY_TIMEOUT_MS` | `30000` | таймаут запроса и `statement_timeout` для PG |

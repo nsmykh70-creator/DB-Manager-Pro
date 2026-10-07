@@ -28,6 +28,13 @@ export default function App() {
   const [loginError, setLoginError] = useState('');
   const [authError, setAuthError] = useState('');
   const [loginBusy, setLoginBusy] = useState(false);
+  const [defaultCreds, setDefaultCreds] = useState<boolean | null>(null);
+  const [mustChange, setMustChange] = useState(false);
+  const [forceName, setForceName] = useState('');
+  const [forcePass, setForcePass] = useState('');
+  const [forcePass2, setForcePass2] = useState('');
+  const [forceError, setForceError] = useState('');
+  const [forceBusy, setForceBusy] = useState(false);
   const authStateRef = useRef(authState);
   authStateRef.current = authState;
 
@@ -198,6 +205,17 @@ export default function App() {
     return () => window.removeEventListener(TABLES_CHANGED_EVENT, onTablesChanged);
   }, []);
 
+  // Подсказка про дефолтные admin/admin — только пока она правда действует.
+  useEffect(() => {
+    if (authState !== 'login') return;
+    let cancelled = false;
+    api.authSetup().then(
+      (r) => { if (!cancelled) setDefaultCreds(r.defaultCredentials); },
+      () => { if (!cancelled) setDefaultCreds(null); }
+    );
+    return () => { cancelled = true; };
+  }, [authState]);
+
   const handleLogin = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (loginBusy) return;
@@ -209,6 +227,11 @@ export default function App() {
       setAuthToken(result.token);
       setUser(result.user);
       setLoginPassword('');
+      setForceName(result.user.username);
+      setForcePass('');
+      setForcePass2('');
+      setForceError('');
+      setMustChange(result.mustChangePassword === true);
       setAuthState('authenticated');
     } catch (error) {
       setLoginError(error instanceof Error ? error.message : t('app.errorLogin'));
@@ -220,10 +243,33 @@ export default function App() {
   const handleLogout = () => {
     api.logout();
     setUser(null);
+    setMustChange(false);
     setLoginPassword('');
     setLoginError('');
     setAuthError('');
     setAuthState('login');
+  };
+
+  // Принудительная смена заводских admin/admin: без неё дальше нельзя.
+  // После смены выходим на экран входа заново: токен привязан к старому имени.
+  const handleForceChange = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (forceBusy || !user) return;
+    const name = forceName.trim();
+    if (!/^[A-Za-z0-9_.-]{3,64}$/.test(name)) { setForceError(t('app.forceBadName')); return; }
+    if (forcePass.length < 8 || (name === 'admin' && forcePass === 'admin')) { setForceError(t('app.forceWeak')); return; }
+    if (forcePass !== forcePass2) { setForceError(t('app.forceMismatch')); return; }
+    setForceBusy(true);
+    setForceError('');
+    try {
+      await api.updateAuthUser(user.id, { username: name, password: forcePass });
+      addToast(t('app.forceDone'), 'success');
+      handleLogout();
+    } catch (error: any) {
+      setForceError(error?.message ?? String(error));
+    } finally {
+      setForceBusy(false);
+    }
   };
 
   const toggleTheme = () => {
@@ -508,6 +554,55 @@ export default function App() {
               className="w-full rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-60 px-3 py-2 text-sm font-medium text-white transition-colors"
             >
               {loginBusy ? t('app.signingIn') : t('app.signIn')}
+            </button>
+            {defaultCreds && <p className="text-center text-xs text-amber-600 dark:text-amber-400">{t('app.defaultCreds')}</p>}
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  if (authState === 'authenticated' && mustChange && user) {
+    return (
+      <div className="min-h-screen w-full flex items-center justify-center bg-gray-50 dark:bg-[#151923] px-4 py-10 text-gray-900 dark:text-gray-100">
+        <div className="w-full max-w-sm rounded-2xl border border-amber-300 dark:border-amber-700 bg-white dark:bg-[#1e2330] shadow-xl p-8">
+          <h1 className="text-xl font-semibold">{t('app.forceTitle')}</h1>
+          <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">{t('app.forceText')}</p>
+          <form onSubmit={handleForceChange} className="mt-4 space-y-4">
+            <label className="block text-sm font-medium">{t('app.user')}<input
+                value={forceName}
+                onChange={(event) => setForceName(event.target.value)}
+                autoComplete="username"
+                required
+                autoFocus
+                className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-[#151923] px-3 py-2 text-sm outline-none focus:border-blue-500"
+              />
+            </label>
+            <label className="block text-sm font-medium">{t('app.forceNewPassword')}<input
+                type="password"
+                value={forcePass}
+                onChange={(event) => setForcePass(event.target.value)}
+                autoComplete="new-password"
+                required
+                className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-[#151923] px-3 py-2 text-sm outline-none focus:border-blue-500"
+              />
+            </label>
+            <label className="block text-sm font-medium">{t('app.forceConfirm')}<input
+                type="password"
+                value={forcePass2}
+                onChange={(event) => setForcePass2(event.target.value)}
+                autoComplete="new-password"
+                required
+                className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-[#151923] px-3 py-2 text-sm outline-none focus:border-blue-500"
+              />
+            </label>
+            {forceError && <p role="alert" className="rounded-lg bg-red-50 dark:bg-red-950/40 px-3 py-2 text-sm text-red-600 dark:text-red-400">{forceError}</p>}
+            <button
+              type="submit"
+              disabled={forceBusy}
+              className="w-full rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-60 px-3 py-2 text-sm font-medium text-white transition-colors"
+            >
+              {t('app.forceApply')}
             </button>
           </form>
         </div>

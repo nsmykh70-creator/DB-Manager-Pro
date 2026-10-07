@@ -38,10 +38,19 @@ export interface AppConfig {
   metaPath: string;
   adminUser: string;
   adminPassword: string;
+  /** Пароль взят из встроенного дефолта (не задан явно): первого админа помечаем
+   *  mustChange, а production-guard дефолт пропускает (см. ниже). */
+  adminPasswordIsDefault: boolean;
   requireAuth: boolean;
   corsOrigins: string[];
   rateLimitMax: number;
 }
+
+/** Встроенные учётные данные для первого входа: показываются на экране входа,
+ *  пока хоть один пользователь помечен mustChange. После смены пароля через API
+ *  флаг снимается, и дефолт перестаёт действовать как приглашение. */
+export const DEFAULT_ADMIN_USER = 'admin';
+export const DEFAULT_ADMIN_PASSWORD = 'admin';
 
 function need(name: string, fallback?: string): string {
   const v = process.env[name] ?? fallback;
@@ -51,13 +60,16 @@ function need(name: string, fallback?: string): string {
 
 export function loadConfig(): AppConfig {
   loadEnvFile();
+  const adminPasswordIsDefault = !(process.env.ADMIN_PASSWORD ?? '').trim();
   if (process.env.NODE_ENV === 'production') {
     const jwtSecret = process.env.JWT_SECRET ?? '';
     const encryptionKey = process.env.ENCRYPTION_KEY ?? '';
     const adminPassword = process.env.ADMIN_PASSWORD ?? '';
     if (!jwtSecret || /dev|change|default|secret/i.test(jwtSecret)) throw new Error('JWT_SECRET must be replaced in production');
     if (!/^[a-f0-9]{64}$/i.test(encryptionKey) || /^0+$/.test(encryptionKey)) throw new Error('ENCRYPTION_KEY must be a generated 64-character hex value');
-    if (adminPassword.length < 12 || /^(admin|password|testpass|change)/i.test(adminPassword)) throw new Error('ADMIN_PASSWORD must be replaced with a strong value');
+    // Встроенный дефолт пропускаем сознательно: первый вход всё равно упрётся в
+    // обязательную смену пароля (mustChange), а явно заданный слабый — нет.
+    if (!adminPasswordIsDefault && (adminPassword.length < 12 || /^(admin|password|testpass|change)/i.test(adminPassword))) throw new Error('ADMIN_PASSWORD must be replaced with a strong value');
   }
   return {
      port: Number(process.env.PORT ?? 3001),
@@ -67,8 +79,9 @@ export function loadConfig(): AppConfig {
     queryMaxRows: Number(process.env.QUERY_MAX_ROWS ?? 1000),
     queryTimeoutMs: Number(process.env.QUERY_TIMEOUT_MS ?? 30000),
     metaPath: process.env.META_PATH ?? './data/meta.db',
-    adminUser: need('ADMIN_USER'),
-    adminPassword: need('ADMIN_PASSWORD'),
+    adminUser: (process.env.ADMIN_USER ?? '').trim() || DEFAULT_ADMIN_USER,
+    adminPassword: (process.env.ADMIN_PASSWORD ?? '').trim() || DEFAULT_ADMIN_PASSWORD,
+    adminPasswordIsDefault,
     requireAuth: (process.env.REQUIRE_AUTH ?? '1') === '1',
     corsOrigins: (process.env.CORS_ORIGIN ?? 'http://localhost:3000,http://127.0.0.1:3000').split(',').map((origin) => origin.trim()).filter(Boolean),
     rateLimitMax: Number(process.env.RATE_LIMIT_MAX ?? 200)

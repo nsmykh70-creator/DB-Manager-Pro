@@ -74,7 +74,7 @@ const CONN = '00000000-0000-4000-8000-000000000000'; // заведомо нес�
 const BAD = `${CONN}/nodb`;
 
 // Маршруты, которые по замыслу публичны: аноним должен получить 200.
-const PUBLIC_ROUTES = new Set(['GET /api/health', 'GET /api/drivers']);
+const PUBLIC_ROUTES = new Set(['GET /api/health', 'GET /api/drivers', 'GET /api/auth/setup']);
 // Маршруты, где readonly правомерен: это его личное (история запросов), а не
 // изменение базы. Проверяем отдельно, что чужими записями он не оперирует.
 const READONLY_ALLOWED = new Set(['POST /api/history']);
@@ -83,6 +83,7 @@ const READONLY_ALLOWED = new Set(['POST /api/history']);
 const ROUTES = [
   ['GET', '/api/health', false, false],
   ['GET', '/api/drivers', false, false],
+  ['GET', '/api/auth/setup', false, false],
   ['GET', '/api/system/status', false, false],
   ['GET', '/api/settings', false, false],
   ['PUT', '/api/settings', true, true, { projectName: 'audit-probe' }],
@@ -136,6 +137,11 @@ const ROUTES = [
   ['POST', `/api/connections/${CONN}/nodb/t/preview`, true, false, { ops: [] }],
   ['POST', `/api/connections/${CONN}/nodb/t/triggers`, true, false, { name: 'trg', timing: 'BEFORE', event: 'INSERT', body: 'BEGIN END' }],
   ['DELETE', `/api/connections/${CONN}/nodb/t/triggers/trg`, true, false],
+  // Тела заведомо неполные (нет sql/name): создание не происходит, мусора нет.
+  ['POST', `/api/connections/${CONN}/nodb/views`, true, false, { name: 'audit_view' }],
+  ['DELETE', `/api/connections/${CONN}/nodb/views/nonexistent`, true, false],
+  ['POST', `/api/connections/${CONN}/nodb/schemas`, true, false],
+  ['DELETE', `/api/connections/${CONN}/nodb/schemas/nonexistent`, true, false],
   ['GET', '/api/data-undo', false, false],
   ['DELETE', '/api/data-undo/nonexistent', true, false],
   ['POST', '/api/data-undo/nonexistent/undo', true, false],

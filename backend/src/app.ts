@@ -47,7 +47,7 @@ register(mongoDriver);
 register(redisDriver as any);
 register(oracleDriver);
 
-const PUBLIC = new Set(['/api/health', '/api/drivers', '/api/auth/login', '/docs', '/docs/json', '/docs/yaml']);
+const PUBLIC = new Set(['/api/health', '/api/drivers', '/api/auth/login', '/api/auth/setup', '/docs', '/docs/json', '/docs/yaml']);
 
 export async function buildApp() {
   const cfg = loadConfig();
@@ -184,7 +184,7 @@ export async function buildApp() {
   ensureHistoryTable(cfg.metaPath);
 
   // seed admin (async, не блокируем старт)
-  void ensureAdmin(cfg.metaPath, cfg.adminUser, cfg.adminPassword).catch((e) => app.log.error(e));
+  void ensureAdmin(cfg.metaPath, cfg.adminUser, cfg.adminPassword, cfg.adminPasswordIsDefault).catch((e) => app.log.error(e));
 
   // планировщик бэкапов: тикает каждые 30с
   const stopScheduler = startScheduler(cfg.metaPath, cfg.encryptionKeyHex, app.log);

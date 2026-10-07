@@ -24,7 +24,7 @@ export function openMeta(metaPath: string): Database.Database {
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY, username TEXT UNIQUE NOT NULL,
       passHash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'editor',
-      createdAt INTEGER NOT NULL
+      createdAt INTEGER NOT NULL, mustChange INTEGER NOT NULL DEFAULT 0
     );
     CREATE TABLE IF NOT EXISTS design_snapshots (
       id INTEGER PRIMARY KEY AUTOINCREMENT, connId TEXT NOT NULL,
@@ -43,6 +43,9 @@ export function openMeta(metaPath: string): Database.Database {
   if (!auditCols.some((c) => c.name === 'actor')) db.exec(`ALTER TABLE audit ADD COLUMN actor TEXT`);
   // Значения правок строк в аудите (before/after)
   if (!auditCols.some((c) => c.name === 'valuesJson')) db.exec(`ALTER TABLE audit ADD COLUMN valuesJson TEXT`);
+  // Флаг обязательной смены пароля (дефолтные admin/admin при первом входе)
+  const userCols = db.prepare(`PRAGMA table_info(users)`).all() as { name: string }[];
+  if (!userCols.some((c) => c.name === 'mustChange')) db.exec(`ALTER TABLE users ADD COLUMN mustChange INTEGER NOT NULL DEFAULT 0`);
   return db;
 }
 
