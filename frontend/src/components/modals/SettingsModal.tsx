@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { X, Save, Shield, HardDrive, Settings, User, Bell } from 'lucide-react';
-import { api, AppSettings, BackupRun, BackupSchedule, DbKind, PanelUser } from '../../api';
+import { api, AppSettings, BackupRun, BackupSchedule, DbKind, MetaBackup, PanelUser } from '../../api';
 import { formatDateTime } from '../../intl';
 import { Theme } from '../../types';
 import { ALL_KINDS, kindLabel } from '../../engineKinds';
@@ -47,6 +47,9 @@ export function SettingsModal({ isOpen, onClose, addToast, initialTab = 'general
   // Последние копии по расписаниям: нужны кнопкам «Восстановить»/«Скачать».
   const [backupRuns, setBackupRuns] = useState<Record<string, BackupRun[]>>({});
   const [restoreBusy, setRestoreBusy] = useState<string | null>(null);
+  // Снапшоты самой meta.db (подключения, пользователи, расписания).
+  const [metaBackups, setMetaBackups] = useState<MetaBackup[]>([]);
+  const [metaBusy, setMetaBusy] = useState(false);
   // Двухфакторка своего аккаунта: статус, секрет на подтверждении, пароль.
   const [twofaEnabled, setTwofaEnabled] = useState<boolean | null>(null);
   const [twofaStep, setTwofaStep] = useState<'idle' | 'confirm'>('idle');
@@ -78,6 +81,46 @@ export function SettingsModal({ isOpen, onClose, addToast, initialTab = 'general
   React.useEffect(() => {
     if (isOpen && activeTab === 'backup') fetchBackups();
   }, [activeTab, fetchBackups, isOpen]);
+
+  const fetchMetaBackups = React.useCallback(async () => {
+    try {
+      setMetaBackups(await api.metaBackups());
+    } catch {
+      setMetaBackups([]);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    if (isOpen && activeTab === 'backup') void fetchMetaBackups();
+  }, [activeTab, isOpen, fetchMetaBackups]);
+
+  const handleCreateMetaBackup = async () => {
+    setMetaBusy(true);
+    try {
+      await api.createMetaBackup();
+      await fetchMetaBackups();
+      addToast(t('settings.metaDone'), 'success');
+    } catch (e: any) {
+      addToast(t('settings.errorMeta') + e.message, 'error');
+    } finally {
+      setMetaBusy(false);
+    }
+  };
+
+  // Восстановление meta.db подменяет файл на диске: после него просим
+  // перезайти (токены живы, но состояние перечитается чисто).
+  const handleRestoreMetaBackup = async (file: string) => {
+    if (!confirm(t('settings.confirmMetaRestore', { file }))) return;
+    setMetaBusy(true);
+    try {
+      await api.restoreMetaBackup(file);
+      addToast(t('settings.metaRestored'), 'success');
+    } catch (e: any) {
+      addToast(t('settings.errorMeta') + e.message, 'error');
+    } finally {
+      setMetaBusy(false);
+    }
+  };
 
   const fetchTwofa = React.useCallback(async () => {
     try {
@@ -241,6 +284,14 @@ export function SettingsModal({ isOpen, onClose, addToast, initialTab = 'general
   const handleDownloadRun = async (run: BackupRun) => {
     try {
       await api.downloadBackupRun(run.id, run.file);
+    } catch (e: any) {
+      addToast(t('settings.errorDownload') + e.message, 'error');
+    }
+  };
+
+  const handleDownloadMeta = async (file: string) => {
+    try {
+      await api.downloadMetaBackup(file);
     } catch (e: any) {
       addToast(t('settings.errorDownload') + e.message, 'error');
     }
@@ -605,6 +656,37 @@ export function SettingsModal({ isOpen, onClose, addToast, initialTab = 'general
                    </div>
                    {connKind === 'mongodb' && <p className="text-xs text-gray-500 dark:text-gray-400">{t('settings.mongoJsonOnly')}</p>}
                  </div>
+
+                  <div className="space-y-2 rounded-md border border-gray-200 dark:border-gray-800 px-3 py-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <label className="text-sm font-medium text-gray-700 dark:text-gray-300">{t('settings.metaTitle')}</label>
+                      <button onClick={() => void handleCreateMetaBackup()} disabled={metaBusy} className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-3 py-1.5 rounded-md text-xs font-medium transition-colors">
+                        {t('settings.metaCreate')}
+                      </button>
+                    </div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">{t('settings.metaHint')}</p>
+                    {metaBackups.length === 0 ? (
+                      <p className="text-xs text-gray-400">{t('settings.noMeta')}</p>
+                    ) : (
+                      <div className="space-y-1">
+                        {metaBackups.map(b => (
+                          <div key={b.file} className="flex items-center justify-between gap-2 text-xs">
+                            <span className="truncate font-mono" title={b.file}>
+                              {formatDateTime(b.at, lang)} · {(b.bytes / 1024).toFixed(1)} KiB
+                            </span>
+                            <span className="flex gap-2 shrink-0">
+                              <button onClick={() => void handleRestoreMetaBackup(b.file)} disabled={metaBusy} className="text-blue-600 dark:text-blue-400 hover:underline disabled:opacity-50">
+                                {t('settings.restore')}
+                              </button>
+                              <button onClick={() => void handleDownloadMeta(b.file)} className="text-gray-500 dark:text-gray-400 hover:underline">
+                                {t('settings.download')}
+                              </button>
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
 
                  <div className="space-y-2">
                    <label className="text-sm font-medium text-gray-700 dark:text-gray-300">{t('settings.backupSchedules')}</label>

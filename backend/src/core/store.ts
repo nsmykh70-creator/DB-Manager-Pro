@@ -52,6 +52,15 @@ export function openMeta(metaPath: string): Database.Database {
   return db;
 }
 
+/** Закрыть хендл meta.db (нужно восстановлению из снапшота: файл подменяется
+ *  на диске, после чего открывается заново через openMeta). */
+export function closeMeta(): void {
+  if (db) {
+    try { db.close(); } catch { /* уже закрыта */ }
+    db = null;
+  }
+}
+
 export function rowToCfg(r: Record<string, unknown>): ConnectionConfig {
   return {
     id: String(r.id), name: String(r.name), kind: r.kind as ConnectionConfig['kind'],

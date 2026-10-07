@@ -7,6 +7,8 @@ import {
   listRuns, runBackup, runFile, restoreRun
 } from '../core/backups.js';
 import { createCheckpoint, deleteCheckpoint, listCheckpoints, restoreCheckpoint } from '../core/checkpoints.js';
+import { createMetaBackup, listMetaBackups, metaBackupDir, restoreMetaBackup } from '../core/metabackup.js';
+import { join } from 'node:path';
 
 function me(req: unknown): PanelUser | undefined {
   return (req as { user?: PanelUser }).user;
@@ -75,6 +77,44 @@ export function backupRoutes(app: FastifyInstance, cfg: AppConfig): void {
     const u = guard(req);
     const { id } = req.params as { id: string };
     return restoreRun(cfg.metaPath, cfg.encryptionKeyHex, id, u?.username);
+  });
+
+  // --- Снапшоты самой meta.db (подключения, пользователи, расписания) ---
+  // Только администратор: в файле лежат шифрованные пароли подключений.
+  function needMetaAdmin(req: unknown): PanelUser {
+    const u = me(req);
+    if (!u) throw Object.assign(new Error('Unauthorized'), { statusCode: 401 });
+    if (u.role !== 'admin') throw Object.assign(new Error('Admin only'), { statusCode: 403 });
+    return u;
+  }
+
+  app.get('/api/backups/meta', async (req) => {
+    needMetaAdmin(req);
+    return listMetaBackups(cfg.metaPath);
+  });
+
+  app.post('/api/backups/meta', async (req) => {
+    const u = needMetaAdmin(req);
+    const { keepLast } = (req.body ?? {}) as { keepLast?: number };
+    return createMetaBackup(cfg.metaPath, u.username, keepLast);
+  });
+
+  app.get('/api/backups/meta/:file/download', async (req, reply) => {
+    needMetaAdmin(req);
+    const { file } = req.params as { file: string };
+    if (!/^meta-.*\.db$/.test(file) || file.includes('/') || file.includes('\\')) {
+      throw Object.assign(new Error('Bad snapshot name'), { statusCode: 400 });
+    }
+    const full = join(metaBackupDir(cfg.metaPath), file);
+    reply.header('content-type', 'application/octet-stream')
+      .header('content-disposition', `attachment; filename="${file}"`);
+    return reply.send(createReadStream(full));
+  });
+
+  app.post('/api/backups/meta/:file/restore', async (req) => {
+    const u = needMetaAdmin(req);
+    const { file } = req.params as { file: string };
+    return restoreMetaBackup(cfg.metaPath, file, u.username);
   });
 
   // --- Точки восстановления отдельной таблицы (checkpoint) ---

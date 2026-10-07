@@ -366,6 +366,8 @@ export interface BackupRun {
   bytes: number; tables: number; ok: number | boolean; error: string | null; at: number;
 }
 
+export interface MetaBackup { file: string; bytes: number; at: number }
+
 export interface AppSettings {
   projectName: string;
   timezone: string;
@@ -756,8 +758,7 @@ export const api = {
     return request<BackupRun[]>(`/backups/runs${q ? '?' + q : ''}`);
   },
   restoreBackupRun: (runId: string) =>
-    request<{ ok: boolean; [k: string]: unknown }>(`/backups/runs/${enc(runId)}/restore`, { method: 'POST' }),
-  downloadBackupRun: async (runId: string, filename: string) => {
+    request<{ ok: boolean; [k: string]: unknown }>(`/backups/runs/${enc(runId)}/restore`, { method: 'POST' }),  downloadBackupRun: async (runId: string, filename: string) => {
     const r = await requestRaw(`/backups/runs/${enc(runId)}/download`);
     if (!r.ok) {
       const body = await r.json().catch(() => null);
@@ -768,6 +769,28 @@ export const api = {
     const a = document.createElement('a');
     a.href = url;
     a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  },
+
+  /** Снапшоты meta.db (только admin): создать, список, восстановить, скачать. */
+  metaBackups: () => request<MetaBackup[]>('/backups/meta'),
+  createMetaBackup: () => request<MetaBackup>('/backups/meta', { method: 'POST' }),
+  restoreMetaBackup: (file: string) =>
+    request<{ ok: boolean }>(`/backups/meta/${enc(file)}/restore`, { method: 'POST' }),
+  downloadMetaBackup: async (file: string) => {
+    const r = await requestRaw(`/backups/meta/${enc(file)}/download`);
+    if (!r.ok) {
+      const body = await r.json().catch(() => null);
+      throw new Error(body?.error || `API ${r.status}`);
+    }
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = file;
     document.body.appendChild(a);
     a.click();
     a.remove();

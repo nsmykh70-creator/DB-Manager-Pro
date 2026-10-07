@@ -80,6 +80,20 @@ try {
   check('ro blocked', r.status === 403, `status=${r.status}`);
 } catch (e) { check('ro blocked', false, String(e)); }
 
+// meta.db: снять копию, увидеть в списке, восстановить, сервер жив после замены
+const meta0 = await req('POST', '/api/backups/meta', T, {});
+check('meta snapshot', typeof meta0.file === 'string' && meta0.bytes > 0, `${meta0.file} ${meta0.bytes}b`);
+const metaList = await req('GET', '/api/backups/meta', T);
+check('meta listed', metaList.some((x) => x.file === meta0.file), `n=${metaList.length}`);
+const restored = await req('POST', `/api/backups/meta/${meta0.file}/restore`, T);
+check('meta restored', restored.ok === true, JSON.stringify(restored).slice(0, 80));
+const alive = await req('GET', '/api/health', null).catch(() => null);
+check('server alive after meta restore', alive !== null, '');
+try {
+  await req('DELETE', `/api/backups/meta/${meta0.file}/restore`, T);
+  check('meta restore path is POST-only', false);
+} catch { check('meta restore path is POST-only', true); }
+
 // cleanup
 await req('DELETE', `/api/backups/schedules/${sch.id}`, T);
 await req('DELETE', `/api/backups/schedules/${schm.id}`, T);

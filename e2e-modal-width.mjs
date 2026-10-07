@@ -51,7 +51,7 @@ for (const name of modals) {
   check('конструктор: поля ввода не задают свою ширину',
     !/className="w-20 [^"]*"/.test(src) && !/className="w-28 [^"]*"/.test(src), '');
   check('конструктор: подпись про Primary Key переносится',
-    /break-all">\s*Выбрано Primary Key/.test(src.replace(/\s+/g, ' ')), '');
+    /break-all">\s*\{t\('createTable\.selectedPk'/.test(src.replace(/\s+/g, ' ')), '');
 }
 
 // Модели: у таблицы должен быть контейнер, который не даёт ей выйти за окно.
