@@ -235,10 +235,40 @@ npm run stack:up                        # docker compose up --build -d
 
 - `client_max_body_size 100m` — иначе дефолт nginx в 1 MB отбил бы 413 на загрузке SQLite-файлов
   (лимит бэкенда — 100 MB) раньше, чем запрос дойдёт до `@fastify/multipart`.
+- Заголовки безопасности везде по одному разу: статику (`/`, `/assets/*`) подписывает
+  nginx (`X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
+  `Referrer-Policy: no-referrer`, `Permissions-Policy` без камеры/микрофона/гео),
+  а `/api/` и `/docs` — сам backend через `onSend`-хук (server-level в nginx не задан,
+  иначе location без своих `add_header` дублировал бы значения).
 - `proxy_read_timeout` / `proxy_send_timeout` = 300 с под `QUERY_TIMEOUT_MS=30000` и стриминг
   экспорта/бэкапов; `proxy_buffering off`, чтобы поток не копился в nginx целиком.
 - `location /docs` проксирует Swagger UI на backend (иначе `/docs` отдавал бы SPA-shell).
 - gzip для текстовых типов, `Cache-Control: no-cache` для `index.html`.
+
+### TLS наружу (если панель видна не только с localhost)
+
+По умолчанию все порты привязаны к `127.0.0.1` — наружу ничего не торчит, и TLS не
+нужен. Для доступа по сети: заведите reverse-proxy с TLS **перед** compose (Caddy /
+Traefik / внешний nginx) либо добавьте в `frontend` listener 443:
+
+```bash
+mkdir -p frontend/certs
+openssl req -x509 -newkey rsa:2048 -nodes -keyout frontend/certs/key.pem \
+  -out frontend/certs/cert.pem -days 825 -subj "/CN=dbpanel.local"
+```
+
+```nginx
+# в server { listen 80; ... } добавить рядом:
+# server {
+#   listen 443 ssl;
+#   ssl_certificate /etc/nginx/certs/cert.pem;
+#   ssl_certificate_key /etc/nginx/certs/key.pem;
+#   # ... те же location, что для :80 ...
+# }
+```
+
+и том `frontend/certs:/etc/nginx/certs:ro` в `docker-compose.yml`. Самоподписанный
+сертификат браузер попросит подтвердить один раз; для продакшена берите certbot.
 
 ### `NODE_ENV=production` — fail-fast
 
@@ -304,7 +334,10 @@ npm run stack:up                        # docker compose up --build -d
   (401 `Bad token`).
 - Токен хранится в браузере в `localStorage` (`mydbroot_token`); при `exp` в прошедшем времени
   Frontend вычищает его на старте. Ответ 401 на любом запросе выбрасывает на экран входа.
-- Anti-bruteforce: при неверном логине/пароле/коде сервер ждёт 300 мс и отвечает 401.
+- Anti-bruteforce в два рубежа: при неверном логине/пароле/коде сервер ждёт 300 мс
+  и отвечает 401; 10 неудач за 10 минут с одного ключа (IP + пользователь) —
+  отказ 429 на 15 минут (`authBlocked/authFailed/authOk` в `core/auth.ts`, счётчики
+  в памяти — рестарт их сбрасывает). Успешный вход счётчик обнуляет.
 - Роли создаются только через `POST /api/auth/users` (admin). Имя: `[A-Za-z0-9_.-]{3,64}`,
   пароль 8–128 символов, роль из `admin|editor|readonly` (по умолчанию `editor`).
 - `PATCH /api/auth/users/:id` меняет имя/пароль/роль (смена пароля снимает `mustChange`),

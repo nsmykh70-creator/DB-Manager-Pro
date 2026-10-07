@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import type { AppConfig } from '../core/config.js';
-import { hashPass, signToken, signTempToken, verifyPass, verifyTokenPayload, type PanelUser, type Role } from '../core/auth.js';
+import { hashPass, signToken, signTempToken, verifyPass, verifyTokenPayload, authBlocked, authFailed, authOk, type PanelUser, type Role } from '../core/auth.js';
 import { generateSecret, otpauthUrl, verifyTotp } from '../core/totp.js';
 import { readSessionTtlMin } from './settings.js';
 import { openMeta } from '../core/store.js';
@@ -28,12 +28,16 @@ export function authRoutes(app: FastifyInstance, cfg: AppConfig): void {
   app.post('/api/auth/login', async (req) => {
     const { username, password } = (req.body ?? {}) as { username?: string; password?: string };
     if (!username || !password) throw Object.assign(new Error('username+password required'), { statusCode: 400 });
+    const throttleKey = `login:${req.ip}:${username}`;
+    if (authBlocked(throttleKey)) throw Object.assign(new Error('Too many failed attempts, try later'), { statusCode: 429 });
     const db = openMeta(cfg.metaPath);
     const r = db.prepare(`SELECT * FROM users WHERE username=?`).get(username) as { id: string; username: string; passHash: string; role: Role; mustChange?: number; totpEnabled?: number } | undefined;
     if (!r || !(await verifyPass(password, r.passHash))) {
+      authFailed(throttleKey);
       await new Promise((res) => setTimeout(res, 300)); // anti-bruteforce задержка
       throw Object.assign(new Error('Bad credentials'), { statusCode: 401 });
     }
+    authOk(throttleKey);
     const user: PanelUser = { id: r.id, username: r.username, role: r.role };
     const mustChangePassword = Number(r.mustChange ?? 0) === 1;
     // Обязательная смена пароля — раньше второго фактора: сначала новые
@@ -70,14 +74,17 @@ export function authRoutes(app: FastifyInstance, cfg: AppConfig): void {
   app.post('/api/auth/2fa/setup', async (req) => {
     const u = (req as { user?: PanelUser }).user;
     if (!u) throw Object.assign(new Error('Unauthorized'), { statusCode: 401 });
+    if (authBlocked(`2fa-setup:${req.ip}:${u.id}`)) throw Object.assign(new Error('Too many failed attempts, try later'), { statusCode: 429 });
     const { password } = (req.body ?? {}) as { password?: string };
     if (!password) throw Object.assign(new Error('password required'), { statusCode: 400 });
     const db = openMeta(cfg.metaPath);
     const row = db.prepare(`SELECT passHash FROM users WHERE id=?`).get(u.id) as { passHash: string } | undefined;
     if (!row || !(await verifyPass(password, row.passHash))) {
+      authFailed(`2fa-setup:${req.ip}:${u.id}`);
       await new Promise((res) => setTimeout(res, 300));
       throw Object.assign(new Error('Bad credentials'), { statusCode: 401 });
     }
+    authOk(`2fa-setup:${req.ip}:${u.id}`);
     const secret = generateSecret();
     db.prepare(`UPDATE users SET totpSecret=?, totpEnabled=0 WHERE id=?`).run(secret, u.id);
     return { secret, otpauthUrl: otpauthUrl(secret, u.username) };
@@ -87,14 +94,17 @@ export function authRoutes(app: FastifyInstance, cfg: AppConfig): void {
   app.post('/api/auth/2fa/enable', async (req) => {
     const u = (req as { user?: PanelUser }).user;
     if (!u) throw Object.assign(new Error('Unauthorized'), { statusCode: 401 });
+    if (authBlocked(`2fa-enable:${req.ip}:${u.id}`)) throw Object.assign(new Error('Too many failed attempts, try later'), { statusCode: 429 });
     const { code } = (req.body ?? {}) as { code?: string };
     const db = openMeta(cfg.metaPath);
     const row = db.prepare(`SELECT totpSecret FROM users WHERE id=?`).get(u.id) as { totpSecret?: string | null } | undefined;
     if (!row?.totpSecret) throw Object.assign(new Error('Run 2fa setup first'), { statusCode: 400 });
     if (!verifyTotp(row.totpSecret, String(code ?? ''))) {
+      authFailed(`2fa-enable:${req.ip}:${u.id}`);
       await new Promise((res) => setTimeout(res, 300));
       throw Object.assign(new Error('Bad code'), { statusCode: 401 });
     }
+    authOk(`2fa-enable:${req.ip}:${u.id}`);
     db.prepare(`UPDATE users SET totpEnabled=1 WHERE id=?`).run(u.id);
     return { ok: true };
   });
@@ -103,14 +113,17 @@ export function authRoutes(app: FastifyInstance, cfg: AppConfig): void {
   app.post('/api/auth/2fa/disable', async (req) => {
     const u = (req as { user?: PanelUser }).user;
     if (!u) throw Object.assign(new Error('Unauthorized'), { statusCode: 401 });
+    if (authBlocked(`2fa-disable:${req.ip}:${u.id}`)) throw Object.assign(new Error('Too many failed attempts, try later'), { statusCode: 429 });
     const { password } = (req.body ?? {}) as { password?: string };
     if (!password) throw Object.assign(new Error('password required'), { statusCode: 400 });
     const db = openMeta(cfg.metaPath);
     const row = db.prepare(`SELECT passHash FROM users WHERE id=?`).get(u.id) as { passHash: string } | undefined;
     if (!row || !(await verifyPass(password, row.passHash))) {
+      authFailed(`2fa-disable:${req.ip}:${u.id}`);
       await new Promise((res) => setTimeout(res, 300));
       throw Object.assign(new Error('Bad credentials'), { statusCode: 401 });
     }
+    authOk(`2fa-disable:${req.ip}:${u.id}`);
     db.prepare(`UPDATE users SET totpSecret=NULL, totpEnabled=0 WHERE id=?`).run(u.id);
     return { ok: true };
   });
@@ -118,14 +131,14 @@ export function authRoutes(app: FastifyInstance, cfg: AppConfig): void {
   // Второй шаг входа: промежуточный токен + код → полный токен.
   app.post('/api/auth/2fa/verify', async (req) => {
     const h = req.headers.authorization;
-    if (!h?.startsWith('Bearer ')) throw Object.assign(new Error('Unauthorized'), { statusCode: 401 });
-    let payload;
+    if (!h?.startsWith('Bearer ')) throw Object.assign(new Error('Unauthorized'), { statusCode: 401 });    let payload;
     try {
       payload = verifyTokenPayload(h.slice(7), cfg.jwtSecret);
     } catch {
       throw Object.assign(new Error('Bad token'), { statusCode: 401 });
     }
     if (payload.scope !== '2fa') throw Object.assign(new Error('Not a 2fa token'), { statusCode: 401 });
+    if (authBlocked(`2fa-verify:${req.ip}:${payload.sub}`)) throw Object.assign(new Error('Too many failed attempts, try later'), { statusCode: 429 });
     const { code } = (req.body ?? {}) as { code?: string };
     const db = openMeta(cfg.metaPath);
     const row = db.prepare(`SELECT * FROM users WHERE id=?`).get(payload.sub) as { id: string; username: string; passHash: string; role: Role; totpSecret?: string | null; totpEnabled?: number } | undefined;
@@ -133,9 +146,11 @@ export function authRoutes(app: FastifyInstance, cfg: AppConfig): void {
       throw Object.assign(new Error('Two-factor is not active'), { statusCode: 401 });
     }
     if (!verifyTotp(row.totpSecret, String(code ?? ''))) {
+      authFailed(`2fa-verify:${req.ip}:${payload.sub}`);
       await new Promise((res) => setTimeout(res, 300));
       throw Object.assign(new Error('Bad code'), { statusCode: 401 });
     }
+    authOk(`2fa-verify:${req.ip}:${payload.sub}`);
     const user: PanelUser = { id: row.id, username: row.username, role: row.role };
     return { token: signToken(user, cfg.jwtSecret, readSessionTtlMin(cfg)), user };
   });

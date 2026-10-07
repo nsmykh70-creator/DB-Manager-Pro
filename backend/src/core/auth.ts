@@ -64,3 +64,42 @@ export function assertRoleWritable(role: Role | undefined, sqlOrAction: string):
     throw Object.assign(new Error('Role readonly cannot write'), { statusCode: 403 });
   }
 }
+
+/**
+ * Временная блокировка перебора паролей/кодов: 10 неудач за 10 минут с одного
+ * ключа (IP + пользователь) — отказ 429 на 15 минут. Пауза 300 мс остаётся
+ * первым рубежом, блокировка — вторым. Хранилище в памяти: рестарт сбрасывает
+ * счётчики (приемлемо для одного инстанса; кластера у панели нет).
+ */
+const AUTH_FAIL_LIMIT = 10;
+const AUTH_FAIL_WINDOW_MS = 10 * 60_000;
+const AUTH_BLOCK_MS = 15 * 60_000;
+const authFailures = new Map<string, { count: number; firstAt: number; blockedUntil: number }>();
+
+export function authBlocked(key: string, now = Date.now()): boolean {
+  const entry = authFailures.get(key);
+  if (!entry) return false;
+  if (now < entry.blockedUntil) return true;
+  if (now - entry.firstAt > AUTH_FAIL_WINDOW_MS) authFailures.delete(key);
+  return false;
+}
+
+export function authFailed(key: string, now = Date.now()): void {
+  let entry = authFailures.get(key);
+  if (!entry || now - entry.firstAt > AUTH_FAIL_WINDOW_MS) {
+    entry = { count: 0, firstAt: now, blockedUntil: 0 };
+  }
+  entry.count++;
+  if (entry.count >= AUTH_FAIL_LIMIT) entry.blockedUntil = now + AUTH_BLOCK_MS;
+  authFailures.set(key, entry);
+  if (authFailures.size > 10_000) {
+    for (const [k, v] of authFailures) {
+      if (now > v.blockedUntil && now - v.firstAt > AUTH_FAIL_WINDOW_MS) authFailures.delete(k);
+      if (authFailures.size <= 10_000) break;
+    }
+  }
+}
+
+export function authOk(key: string): void {
+  authFailures.delete(key);
+}

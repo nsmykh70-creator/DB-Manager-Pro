@@ -60,6 +60,14 @@ export async function buildApp() {
   // обрывает поток и запрос зависает без ответа — считаем файлы в хендлере.
   app.register(multipart, { limits: { fileSize: 100 * 1024 * 1024 } });
   app.register(rateLimit, { max: cfg.rateLimitMax, timeWindow: '1 minute' });
+  // Заголовки безопасности на все ответы API (и на SPA, когда backend отдаёт
+  // собранный frontend сам). Nginx ставит их только статике, чтобы не дублировать.
+  app.addHook('onSend', async (_req, reply) => {
+    reply.header('X-Content-Type-Options', 'nosniff');
+    reply.header('X-Frame-Options', 'DENY');
+    reply.header('Referrer-Policy', 'no-referrer');
+    reply.header('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  });
 // Swagger регистрируется ПЕРВЫМ плагином, а маршруты — отдельным
   // app.register() ниже. Порядок здесь принципиален.
   //

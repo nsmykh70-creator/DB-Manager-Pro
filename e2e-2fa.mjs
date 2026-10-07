@@ -108,6 +108,17 @@ check('2FA выключена', off.enabled === false, JSON.stringify(off));
 const back = await req('POST', '/api/auth/login', null, { username: USER, password: PASS });
 check('вход снова одношаговый', Boolean(back.token) && !back.need2fa, '');
 
+// Перебор пароля: 10 неудач подряд — 11-я уже 429 (блокировка на 15 минут).
+// Ключ включает имя пользователя, поэтому другие учётки не страдают.
+let last = 0;
+for (let i = 0; i < 11; i++) {
+  try {
+    await req('POST', '/api/auth/login', null, { username: USER, password: 'Wrong-pass-1' });
+    last = 200;
+  } catch (e) { last = e.status; }
+}
+check('перебор заблокирован (429)', last === 429, `status=${last}`);
+
 // чистка
 const users = await req('GET', '/api/auth/users', T);
 for (const u of users.filter((x) => x.username === USER)) await req('DELETE', `/api/auth/users/${u.id}`, T);
