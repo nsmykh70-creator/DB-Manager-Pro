@@ -1,6 +1,6 @@
 import React, { useRef, ReactNode, useEffect } from 'react';
 import { useLanguage } from '../contexts/LanguageContext';
-import { ChevronDown, Pin } from 'lucide-react';
+import { ChevronDown, ChevronUp, Pin } from 'lucide-react';
 import { AppWindowState } from '../types';
 
 interface WindowFrameProps {
@@ -191,8 +191,63 @@ export const WindowFrame: React.FC<WindowFrameProps> = ({
     };
   }, []);
 
+  // Свёрнутое окно не исчезает, а схлопывается до полоски заголовка: раньше здесь
+  // был `return null`, и окно пропадало без пути назад (кнопка «свернуть» вела
+  // в ловушку — восстановить было нечем). Клик по кнопке сворачивания снова
+  // разворачивает: оба места вызова передают тогглящий onMinimize.
   if (isMinimized) {
-    return null;
+    return (
+      <div
+        onMouseDown={onFocus}
+        style={{ zIndex, top: `${y}px`, left: `${x}px`, width: `${Math.max(200, Math.min(width, 320))}px` }}
+        className="pointer-events-auto absolute flex flex-col overflow-hidden rounded-xl border border-black/10 dark:border-white/10 opacity-98 bg-[#f9f9f9]/95 dark:bg-[#202020]/95 backdrop-blur-xl shadow-[0_12px_36px_rgba(0,0,0,0.18)]"
+      >
+        <div
+          onMouseDown={handleTitleBarMouseDown}
+          onDoubleClick={(e) => { e.stopPropagation(); onMinimize(); }}
+          className="h-[36px] flex items-center justify-between cursor-move select-none shrink-0 border-b bg-[#fafafa]/80 dark:bg-[#1f1f1f]/80 border-black/[0.05] dark:border-white/[0.05] text-gray-500 dark:text-gray-400"
+        >
+          <div className="flex items-center gap-2 pl-3 min-w-0 pr-2 pointer-events-none">
+            <span className="shrink-0 scale-90 text-blue-600 dark:text-blue-400">
+              {icon}
+            </span>
+            <span className="text-[12px] font-normal tracking-tight truncate font-sans">
+              {title}
+            </span>
+            {badge && <div className="shrink-0">{badge}</div>}
+          </div>
+          <div className="flex items-center h-full">
+            <button
+              type="button"
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                onMinimize();
+              }}
+              title={t('window.unminimize')}
+              className="h-[36px] px-2.5 flex items-center gap-1 text-gray-700 dark:text-gray-300 hover:bg-black/[0.07] dark:hover:bg-white/[0.08] active:bg-black/[0.12] transition-colors text-[11px] font-medium"
+            >
+              <ChevronUp className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">{t('window.unminimize')}</span>
+            </button>
+            <button
+              type="button"
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                onDock();
+              }}
+              title={t('window.closeDock')}
+              className="w-[46px] h-[36px] flex items-center justify-center text-gray-700 dark:text-gray-300 hover:bg-[#c42b1c] hover:text-white active:bg-[#a82315] active:text-white transition-colors"
+            >
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" xmlns="http://www.w3.org/2000/svg" className="stroke-current">
+                <path d="M0.5 0.5L9.5 9.5M9.5 0.5L0.5 9.5" strokeWidth="1.1" strokeLinecap="round" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (

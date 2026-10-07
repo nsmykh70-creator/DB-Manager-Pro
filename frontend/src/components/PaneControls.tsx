@@ -187,7 +187,7 @@ export function FloatingPane({ paneId, title, state, onChange, containerRef, onF
       isActive
       containerRef={containerRef}
       onFocus={onFocus}
-      onMinimize={() => onChange(paneId, { win: { ...win, minimized: true, maximized: false } })}
+      onMinimize={() => onChange(paneId, { win: { ...win, minimized: !win.minimized, maximized: false } })}
       onToggleMaximize={() => onChange(paneId, { win: { ...win, minimized: false, maximized: !win.maximized } })}
       onDock={dock}
       onUpdateBounds={(b) => onChange(paneId, { win: { ...win, ...b } })}

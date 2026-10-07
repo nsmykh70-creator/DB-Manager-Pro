@@ -2206,7 +2206,8 @@ const additions: Record<string, any> = {
       dockBack: 'Закрепить окно обратно в сетку (ёлочка вниз / прикрепить)',
       restore: 'Восстановить',
       maximize: 'Развернуть на весь экран',
-      closeDock: 'Закрыть (закрепить окно)'
+      closeDock: 'Закрыть (закрепить окно)',
+      unminimize: 'Развернуть'
     },
     monitoring: {
       command: 'Команда',
@@ -4343,7 +4344,8 @@ const additions: Record<string, any> = {
       dockBack: 'Dock the window back into the grid (chevron down / dock)',
       restore: 'Restore',
       maximize: 'Maximize',
-      closeDock: 'Close (dock the window)'
+      closeDock: 'Close (dock the window)',
+      unminimize: 'Restore'
     },
     monitoring: {
       command: 'Command',
@@ -6480,7 +6482,8 @@ const additions: Record<string, any> = {
       dockBack: 'Fenster zurück ins Raster docken (Chevron unten / Andocken)',
       restore: 'Wiederherstellen',
       maximize: 'Maximieren',
-      closeDock: 'Schließen (Fenster andocken)'
+      closeDock: 'Schließen (Fenster andocken)',
+      unminimize: 'Wiederherstellen'
     },
     monitoring: {
       command: 'Befehl',
@@ -8617,7 +8620,8 @@ const additions: Record<string, any> = {
       dockBack: 'Réintégrer la fenêtre dans la grille (chevron vers le bas / ancrer)',
       restore: 'Restaurer',
       maximize: 'Agrandir',
-      closeDock: 'Fermer (ancrer la fenêtre)'
+      closeDock: 'Fermer (ancrer la fenêtre)',
+      unminimize: 'Restaurer'
     },
     monitoring: {
       command: 'Commande',
@@ -10754,7 +10758,8 @@ const additions: Record<string, any> = {
       dockBack: 'Anclar la ventana de nuevo en la cuadrícula (chevron abajo / anclar)',
       restore: 'Restaurar',
       maximize: 'Maximizar',
-      closeDock: 'Cerrar (anclar la ventana)'
+      closeDock: 'Cerrar (anclar la ventana)',
+      unminimize: 'Restaurar'
     },
     monitoring: {
       command: 'Comando',
@@ -12891,7 +12896,8 @@ const additions: Record<string, any> = {
       dockBack: '把窗口停靠回网格（向下箭头 / 停靠）',
       restore: '还原',
       maximize: '最大化',
-      closeDock: '关闭（停靠窗口）'
+      closeDock: '关闭（停靠窗口）',
+      unminimize: '还原'
     },
     monitoring: {
       command: '命令',
