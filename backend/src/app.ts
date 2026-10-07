@@ -47,7 +47,7 @@ register(mongoDriver);
 register(redisDriver as any);
 register(oracleDriver);
 
-const PUBLIC = new Set(['/api/health', '/api/drivers', '/api/auth/login', '/api/auth/setup', '/docs', '/docs/json', '/docs/yaml']);
+const PUBLIC = new Set(['/api/health', '/api/drivers', '/api/auth/login', '/api/auth/setup', '/api/auth/sso', '/api/auth/sso/exchange', '/docs', '/docs/json', '/docs/yaml']);
 
 export async function buildApp() {
   const cfg = loadConfig();

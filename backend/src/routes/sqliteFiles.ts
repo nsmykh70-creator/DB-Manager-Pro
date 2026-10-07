@@ -11,8 +11,9 @@ function me(req: unknown): PanelUser | undefined {
   return (req as { user?: PanelUser }).user;
 }
 
-function dirFor(metaPath: string): string {
-  const d = join(dirname(metaPath), 'sqlite');
+function dirFor(metaPath: string, cfg?: AppConfig): string {
+  const override = (cfg?.sqliteDir ?? '').trim();
+  const d = override ? override : join(dirname(metaPath), 'sqlite');
   mkdirSync(d, { recursive: true });
   return d;
 }
@@ -27,7 +28,7 @@ export function sqliteFileRoutes(app: FastifyInstance, cfg: AppConfig): void {
   app.get('/api/sqlite/files', async (req) => {
     const u = me(req);
     if (!u) throw Object.assign(new Error('Unauthorized'), { statusCode: 401 });
-    const d = dirFor(cfg.metaPath);
+    const d = dirFor(cfg.metaPath, cfg);
     const files = readdirSync(d).filter((f) => /\.(db|sqlite|sqlite3)$/.test(f));
     return files.map((f) => {
       const st = statSync(join(d, f));
@@ -53,7 +54,7 @@ export function sqliteFileRoutes(app: FastifyInstance, cfg: AppConfig): void {
           continue;
         }
         const name = safeName(part.filename);
-        const full = join(dirFor(cfg.metaPath), name);
+        const full = join(dirFor(cfg.metaPath, cfg), name);
         try {
           await pipeline(part.file, createWriteStream(full));
         } catch (e) {
@@ -87,7 +88,7 @@ export function sqliteFileRoutes(app: FastifyInstance, cfg: AppConfig): void {
     if (!u) throw Object.assign(new Error('Unauthorized'), { statusCode: 401 });
     const { name } = req.params as { name: string };
     const safe = safeName(name);
-    const full = join(dirFor(cfg.metaPath), safe);
+    const full = join(dirFor(cfg.metaPath, cfg), safe);
     if (!existsSync(full)) throw Object.assign(new Error('Not found'), { statusCode: 404 });
     reply.header('content-type', 'application/octet-stream').header('content-disposition', `attachment; filename="${safe}"`);
     return reply.send(createReadStream(full));
@@ -98,7 +99,7 @@ export function sqliteFileRoutes(app: FastifyInstance, cfg: AppConfig): void {
     if (!u || u.role !== 'admin') throw Object.assign(new Error('Admin only'), { statusCode: 403 });
     const { name } = req.params as { name: string };
     const safe = safeName(name);
-    const full = join(dirFor(cfg.metaPath), safe);
+    const full = join(dirFor(cfg.metaPath, cfg), safe);
     if (!existsSync(full)) throw Object.assign(new Error('Not found'), { statusCode: 404 });
     unlinkSync(full);
     return { ok: true };

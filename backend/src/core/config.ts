@@ -41,6 +41,12 @@ export interface AppConfig {
   /** Пароль взят из встроенного дефолта (не задан явно): первого админа помечаем
    *  mustChange, а production-guard дефолт пропускает (см. ниже). */
   adminPasswordIsDefault: boolean;
+  /** Общий секрет с лаунчером FarajaWebServer для SSO-билетов. Пусто — SSO
+   *  выключено, и оба SSO-роута отвечают 404 (не 401, чтобы не палить наличие). */
+  ssoSecret: string;
+  /** Дом SQLite-файлов панели. По умолчанию — `<dirname(META_PATH)>/sqlite`,
+   *  для FarajaWebServer задаётся `www/sqlite` через SQLITE_DIR. */
+  sqliteDir: string;
   requireAuth: boolean;
   corsOrigins: string[];
   rateLimitMax: number;
@@ -51,6 +57,11 @@ export interface AppConfig {
  *  флаг снимается, и дефолт перестаёт действовать как приглашение. */
 export const DEFAULT_ADMIN_USER = 'admin';
 export const DEFAULT_ADMIN_PASSWORD = 'admin';
+/** Секрет SSO для встраивающего приложения (FarajaWebServer): только через него
+ *  exe может выпустить одноразовый билет входа. Не задан — SSO выключено. */
+export function ssoSecret(): string {
+  return (process.env.FARAJA_SSO_SECRET ?? '').trim();
+}
 
 function need(name: string, fallback?: string): string {
   const v = process.env[name] ?? fallback;
@@ -82,6 +93,8 @@ export function loadConfig(): AppConfig {
     adminUser: (process.env.ADMIN_USER ?? '').trim() || DEFAULT_ADMIN_USER,
     adminPassword: (process.env.ADMIN_PASSWORD ?? '').trim() || DEFAULT_ADMIN_PASSWORD,
     adminPasswordIsDefault,
+    ssoSecret: (process.env.FARAJA_SSO_SECRET ?? '').trim(),
+    sqliteDir: (process.env.SQLITE_DIR ?? '').trim(),
     requireAuth: (process.env.REQUIRE_AUTH ?? '1') === '1',
     corsOrigins: (process.env.CORS_ORIGIN ?? 'http://localhost:3000,http://127.0.0.1:3000').split(',').map((origin) => origin.trim()).filter(Boolean),
     rateLimitMax: Number(process.env.RATE_LIMIT_MAX ?? 200)

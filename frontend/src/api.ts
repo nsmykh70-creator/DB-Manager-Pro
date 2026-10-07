@@ -440,6 +440,12 @@ export const api = {
     request<{ token: string; user: PanelUser }>('/auth/2fa/verify', {
       method: 'POST', headers: { Authorization: `Bearer ${tempToken}` }, body: JSON.stringify({ code }),
     }),
+  /** SSO-билет от лаунчера FarajaWebServer: одноразовый ticket из ?ticket=
+   *  меняется на JWT (или на 2FA/mustChange-ответ — как обычный login). */
+  ssoExchange: (ticket: string) =>
+    request<{ token: string; user: PanelUser; mustChangePassword?: boolean; need2fa?: boolean; tempToken?: string }>('/auth/sso/exchange', {
+      method: 'POST', body: JSON.stringify({ ticket }),
+    }),
   logout: () => setAuthToken(null),
   me: () => request<{ user: PanelUser }>('/auth/me'),
   authUsers: () => request<PanelUser[]>('/auth/users'),

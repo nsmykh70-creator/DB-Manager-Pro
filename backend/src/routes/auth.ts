@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import type { AppConfig } from '../core/config.js';
+import { ssoSecret } from '../core/config.js';
 import { hashPass, signToken, signTempToken, verifyPass, verifyTokenPayload, authBlocked, authFailed, authOk, type PanelUser, type Role } from '../core/auth.js';
 import { generateSecret, otpauthUrl, verifyTotp } from '../core/totp.js';
 import { readSessionTtlMin } from './settings.js';
@@ -132,8 +133,7 @@ export function authRoutes(app: FastifyInstance, cfg: AppConfig): void {
 
   // Второй шаг входа: промежуточный токен + код → полный токен.
   app.post('/api/auth/2fa/verify', async (req) => {
-    const h = req.headers.authorization;
-    if (!h?.startsWith('Bearer ')) throw Object.assign(new Error('Unauthorized'), { statusCode: 401 });    let payload;
+    const h = req.headers.authorization;    if (!h?.startsWith('Bearer ')) throw Object.assign(new Error('Unauthorized'), { statusCode: 401 });    let payload;
     try {
       payload = verifyTokenPayload(h.slice(7), cfg.jwtSecret);
     } catch {
@@ -212,4 +212,66 @@ export function authRoutes(app: FastifyInstance, cfg: AppConfig): void {
     openMeta(cfg.metaPath).prepare(`DELETE FROM users WHERE id=?`).run(id);
     return { ok: true, actor: actor(req) };
   });
+
+  /**
+   * SSO для встраивающего приложения (FarajaWebServer): exe держит общий секрет
+   * и открывает браузер на `/?ticket=...`. Билет одноразовый, живёт 60 секунд
+   * и привязан к существующему пользователю. Без FARAJA_SSO_SECRET в окружении
+   * обе ручки отвечают 404 — снаружи отличить от отсутствующего маршрута нельзя.
+   */
+  const ssoTickets = new Map<string, { userId: string; expiresAt: number }>();
+
+  app.post('/api/auth/sso', async (req) => {
+    const secret = ssoSecret();
+    if (!secret) throw Object.assign(new Error('Not found'), { statusCode: 404 });
+    const { secret: presented, username } = (req.body ?? {}) as { secret?: string; username?: string };
+    if (!presented || !timingSafeEqualStr(presented, secret)) {
+      await new Promise((res) => setTimeout(res, 300));
+      throw Object.assign(new Error('Not found'), { statusCode: 404 });
+    }
+    if (!username) throw Object.assign(new Error('username required'), { statusCode: 400 });
+    const row = openMeta(cfg.metaPath).prepare(`SELECT id FROM users WHERE username=?`).get(username) as { id: string } | undefined;
+    if (!row) throw Object.assign(new Error('Not found'), { statusCode: 404 });
+    const ticket = randomUUID().replace(/-/g, '') + randomUUID().replace(/-/g, '');
+    ssoTickets.set(ticket, { userId: row.id, expiresAt: Date.now() + 60_000 });
+    if (ssoTickets.size > 1000) {
+      const now = Date.now();
+      for (const [k, v] of ssoTickets) {
+        if (v.expiresAt <= now) ssoTickets.delete(k);
+      }
+    }
+    return { ticket };
+  });
+
+  app.post('/api/auth/sso/exchange', async (req) => {
+    if (!ssoSecret()) throw Object.assign(new Error('Not found'), { statusCode: 404 });
+    const { ticket } = (req.body ?? {}) as { ticket?: string };
+    const entry = typeof ticket === 'string' ? ssoTickets.get(ticket) : undefined;
+    if (entry) ssoTickets.delete(ticket as string);
+    if (!entry || entry.expiresAt <= Date.now()) {
+      await new Promise((res) => setTimeout(res, 300));
+      throw Object.assign(new Error('Bad ticket'), { statusCode: 401 });
+    }
+    const db = openMeta(cfg.metaPath);
+    const r = db.prepare(`SELECT * FROM users WHERE id=?`).get(entry.userId) as { id: string; username: string; passHash: string; role: Role; mustChange?: number; totpEnabled?: number } | undefined;
+    if (!r) throw Object.assign(new Error('Bad ticket'), { statusCode: 401 });
+    const user: PanelUser = { id: r.id, username: r.username, role: r.role };
+    if (Number(r.mustChange ?? 0) === 1) {
+      return { token: signToken(user, cfg.jwtSecret, readSessionTtlMin(cfg)), user, mustChangePassword: true };
+    }
+    if (Number(r.totpEnabled ?? 0) === 1) {
+      return { need2fa: true as const, tempToken: signTempToken(user, cfg.jwtSecret), user };
+    }
+    audit(cfg.metaPath, null, 'auth.login', r.username, true, 0, r.username);
+    return { token: signToken(user, cfg.jwtSecret, readSessionTtlMin(cfg)), user, mustChangePassword: false };
+  });
+}
+
+function timingSafeEqualStr(a: string, b: string): boolean {
+  const ba = Buffer.from(a);
+  const bb = Buffer.from(b);
+  if (ba.length !== bb.length) return false;
+  let diff = 0;
+  for (let i = 0; i < ba.length; i++) diff |= ba[i] ^ bb[i];
+  return diff === 0;
 }

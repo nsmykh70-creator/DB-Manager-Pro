@@ -116,6 +116,41 @@ export default function App() {
     let cancelled = false;
     const initializeAuth = async () => {
       try {
+        // SSO-билет от лаунчера FarajaWebServer: exe открывает панель как
+        // `/?ticket=...`, фронт меняет его на JWT и чистит URL, чтобы билет
+        // не остался в истории/логах. Билет одноразовый (TTL 60 с).
+        try {
+          const params = new URLSearchParams(window.location.search);
+          const ticket = (params.get('ticket') ?? '').trim();
+          if (ticket) {
+            params.delete('ticket');
+            const rest = params.toString();
+            window.history.replaceState(null, '', `${window.location.pathname}${rest ? `?${rest}` : ''}${window.location.hash}`);
+            const sso = await api.ssoExchange(ticket);
+            if (!cancelled) {
+              if (sso.need2fa && sso.tempToken) {
+                setNeed2faToken(sso.tempToken);
+                setTwofaCode('');
+                setTwofaError('');
+                setLoginUsername(sso.user.username);
+                setLoginPassword('');
+                setAuthRequired(true);
+                setAuthState('login');
+                return;
+              }
+              setAuthToken(sso.token);
+              setUser(sso.user);
+              setLoginUsername(sso.user.username);
+              setLoginPassword('');
+              setMustChange(sso.mustChangePassword === true);
+              setAuthRequired(true);
+              setAuthState('authenticated');
+              return;
+            }
+          }
+        } catch {
+          // Билет протух/неверный — падаем в обычный вход ниже.
+        }
         const health = await api.health();
         if (cancelled) return;
         setAuthRequired(health.auth);
