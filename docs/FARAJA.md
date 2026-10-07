@@ -53,6 +53,8 @@ npm run build -w backend && npm run build -w frontend
   блок `phpmyadmin` в `components.json`, упоминания в README.
 - Применение: `git apply faraja-dbmanager.patch` в репозитории FarajaWebServer,
   затем сборка `build.bat` (попадёт в следующий `FarajaWebServerPRO.exe`).
-  Каталог `<faraja>/mydbroot` (без `node_modules`) кладётся рядом с exe —
-  в поставку он не вшивается (`build.bat` пакует только
-  `config/www/assets/components.json/requirements.txt`).
+  Каталог `<faraja>/mydbroot` кладётся рядом с exe и в поставку НЕ вшивается
+  (`build.bat` пакует только `config/www/assets/components.json/requirements.txt`).
+  Для запуска панели нужны: `backend/dist`, `frontend/dist`, `backend/.env`
+  и prod-зависимости (`npm ci --omit=dev -w backend`, ~100 МБ — dev-пакеты
+  и `frontend/node_modules` на рантайм не нужны).
