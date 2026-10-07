@@ -48,7 +48,8 @@ function parseEnv(path) {
 
 const server = readServerJson();
 const env = parseEnv(join(here, 'backend', '.env'));
-const metaPath = env.META_PATH ?? join(FARAJA_ROOT, 'data', 'dbmanager', 'meta.db');
+// Тот же единый meta, что форсирует лаунчер V16 (см. faraja-bootstrap.mjs).
+const metaPath = env.META_PATH ?? join(here, 'backend', 'data', 'meta.db');
 const P = (k, d) => Number(server[k] ?? d);
 
 const PRESETS = [

@@ -42,7 +42,10 @@ function parseEnv(text) {
 
 const server = readServerJson();
 const port = Number(server.mydbroot_port ?? 3001);
-const metaPath = join(FARAJA_ROOT, 'data', 'dbmanager', 'meta.db');
+// Единый meta с лаунчером V16: тот форсирует META_PATH=<mydbroot>/backend/data/meta.db
+// через окружение процесса (см. docs/FARAJA.md) — bootstrap обязан указывать туда же,
+// иначе пресеты и журнал уедут в другой файл.
+const metaPath = join(here, 'backend', 'data', 'meta.db');
 const sqliteDir = join(FARAJA_ROOT, 'www', 'sqlite');
 mkdirSync(dirname(metaPath), { recursive: true });
 mkdirSync(sqliteDir, { recursive: true });
