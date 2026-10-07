@@ -51,7 +51,7 @@ jobs:
           META_PATH: ./data/meta.db
           # Higher than the app default (200): full e2e:all fires hundreds of
           # requests per minute and would flake with 429 on fast runners.
-          RATE_LIMIT_MAX: 1000
+          RATE_LIMIT_MAX: 2000
           # NODE_ENV intentionally left unset: the production guard in
           # core/config.ts rejects placeholder JWT/ENCRYPTION/ADMIN values.
         run: |

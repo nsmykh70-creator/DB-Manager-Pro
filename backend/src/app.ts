@@ -52,7 +52,13 @@ const PUBLIC = new Set(['/api/health', '/api/drivers', '/api/auth/login', '/api/
 export async function buildApp() {
   const cfg = loadConfig();
   openMeta(cfg.metaPath);
-  const app = Fastify({ logger: true });
+  const app = Fastify({
+    logger: true,
+    // За nginx лимит считает по IP клиента из X-Forwarded-For, а не по адресу
+    // самого прокси (иначе все пользователи за NAT делили бы один лимит).
+    // Backend слушает только localhost, подделать заголовок извне нельзя.
+    trustProxy: true,
+  });
   app.register(cors, { origin: cfg.corsOrigins });
   // multipart ОБЯЗАН быть зарегистрирован в корневом scope ДО роутов:
   // иначе req.file() в sqliteFileRoutes не будет декорирован ("req.file is not a function").
@@ -78,7 +84,7 @@ export async function buildApp() {
   // фильтре, а в пустом списке маршрутов. Оба плагина стартуют в порядке
   // регистрации, поэтому хук swagger установлен до маршрутов.
   app.register(swagger, {
-    openapi: { info: { title: 'DB Panel API', version: '0.1.0' }, servers: [{ url: 'http://localhost:3001' }] },
+    openapi: { info: { title: 'DB Panel API', version: '1.0.0' }, servers: [{ url: 'http://localhost:3001' }] },
     // Маршруты описаны без схем (это не pydantic-проект), и по умолчанию
     // fastify-swagger скрывает всё нетегированное — из-за чего страница /docs
     // показывала «DB Panel API» и ноль маршрутов. hideUntagged: false выводит
