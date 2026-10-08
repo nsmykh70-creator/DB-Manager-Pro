@@ -103,18 +103,36 @@ export function setAuthToken(token: string | null) {
 
 export function getAuthToken() { return AUTH_TOKEN; }
 
+/**
+ * Знает ли панель, требует ли backend авторизации (из /api/health).
+ * В режиме Faraja (REQUIRE_AUTH=0) протухший/чужой токен в localStorage
+ * не должен выкидывать на экран входа: его молча сбрасываем и повторяем
+ * запрос без Bearer. null — health ещё не спрашивали, ведём себя как раньше.
+ */
+let AUTH_REQUIRED: boolean | null = null;
+
+export function setAuthKnown(auth: boolean) { AUTH_REQUIRED = auth; }
+
 function notifyUnauthorized() {
   setAuthToken(null);
   window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT));
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function request<T>(path: string, init?: RequestInit, retry = true): Promise<T> {
+  const explicitAuth = new Headers(init?.headers).has('Authorization');
   const headers = new Headers(init?.headers);
-  if (AUTH_TOKEN) headers.set('Authorization', `Bearer ${AUTH_TOKEN}`);
+  if (AUTH_TOKEN && !explicitAuth) headers.set('Authorization', `Bearer ${AUTH_TOKEN}`);
   if (init?.body !== undefined && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
   const r = await fetch(`${API_BASE}${path}`, { ...init, headers });
    const body = await r.json().catch(() => null);
    if (!r.ok) {
+   // Открытый backend (Faraja, REQUIRE_AUTH=0) + протухший/чужой токен:
+   // молча забываем токен и повторяем запрос без него — вместо выкидывания
+   // на экран входа. Только для запросов с сохранённым токеном, один раз.
+   if (r.status === 401 && retry && AUTH_REQUIRED === false && AUTH_TOKEN && !explicitAuth) {
+     setAuthToken(null);
+     return request<T>(path, init, false);
+   }
    if (r.status === 401) notifyUnauthorized();
    const serverMessage = body?.error || `API ${r.status}`;
    if (r.status === 404) notifyConnectionGone(path, serverMessage);
@@ -128,10 +146,15 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
    return body;
    }
 
-async function requestRaw(path: string, init?: RequestInit): Promise<Response> {
+async function requestRaw(path: string, init?: RequestInit, retry = true): Promise<Response> {
+  const explicitAuth = new Headers(init?.headers).has('Authorization');
   const headers = new Headers(init?.headers);
-  if (AUTH_TOKEN) headers.set('Authorization', `Bearer ${AUTH_TOKEN}`);
+  if (AUTH_TOKEN && !explicitAuth) headers.set('Authorization', `Bearer ${AUTH_TOKEN}`);
   const r = await fetch(`${API_BASE}${path}`, { ...init, headers });
+  if (r.status === 401 && retry && AUTH_REQUIRED === false && AUTH_TOKEN && !explicitAuth) {
+    setAuthToken(null);
+    return requestRaw(path, init, false);
+  }
   if (r.status === 401) notifyUnauthorized();
   return r;
 }
@@ -411,7 +434,11 @@ export interface CreateConnectionInput {
 
 export const api = {
   // Health & Drivers
-  health: () => request<{ ok: boolean; ts: number; auth: boolean }>('/health'),
+  health: async () => {
+    const r = await request<{ ok: boolean; ts: number; auth: boolean }>('/health');
+    setAuthKnown(r.auth);
+    return r;
+  },
   drivers: () => request<{ kinds: string[]; implemented: string[] }>('/drivers'),
   systemStatus: () => request<SystemStatus>('/system/status'),
 

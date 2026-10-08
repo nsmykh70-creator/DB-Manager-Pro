@@ -11,6 +11,7 @@ import { CreateConnectionModal } from './components/modals/CreateConnectionModal
 import { CreateTableModal } from './components/modals/CreateTableModal';
 import { ModelsModal } from './components/modals/ModelsModal';
 import { MonitoringGrid } from './components/MonitoringGrid';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { Theme, ToastMessage } from './types';
 import { api, ApiError, AppSettings, AUTH_EXPIRED_EVENT, CONNECTION_GONE_EVENT, ColumnDef, ConnectionInfo, getAuthToken, PanelUser, setAuthToken, TABLES_CHANGED_EVENT } from './api';
 import { SupportedDbDialect } from './dbDialects';
@@ -773,6 +774,7 @@ export default function App() {
         />
         
         <div className="flex-1 flex overflow-hidden">
+          <ErrorBoundary resetKey={`${activeConnId ?? ''}:${activeDbSafe}`}>
           {activeView === 'monitoring' ? (
             <MonitoringGrid connId={activeConnId} userRole={user?.role} connectionReadOnly={activeConn?.readOnly} userName={user?.username} />
           ) : (
@@ -790,6 +792,7 @@ export default function App() {
               userName={user?.username}
             />
           )}
+          </ErrorBoundary>
           <RightSidebar 
             addToast={addToast} 
              openSettings={() => openSettings('backup')}
