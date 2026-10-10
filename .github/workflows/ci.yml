@@ -24,7 +24,7 @@ jobs:
       mongo:
         image: mongo:7
         ports: ["27017:27017"]
-        options: --health-cmd "mongosh --quiet --eval 'db.adminCommand({ ping: 1 }).ok'" --health-interval 10s --health-timeout 5s --health-retries 10
+        options: --health-cmd "mongosh --quiet --eval db.adminCommand('ping').ok" --health-interval 10s --health-timeout 5s --health-retries 10
       # e2e-redis.mjs needs a reachable redis (expects 16 logical DBs = default)
       redis:
         image: redis:7-alpine
